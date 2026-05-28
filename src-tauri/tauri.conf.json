@@ -38,7 +38,8 @@
     "active": true,
     "targets": ["nsis", "msi"],
     "icon": [
-      "../build/icon.png"
+      "../build/icon.png",
+      "../build/icon.ico"
     ],
     "windows": {
       "nsis": {
