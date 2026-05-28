@@ -1,0 +1,32 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release*/
+target/
+
+# Tauri
+src-tauri/target/
+src-tauri/Cargo.lock
+
+# Generated
+auto-imports.d.ts
+
+# Logs
+*.log
+logs/
+
+# Editor
+.vscode/
+.idea/
+*.sw?
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+api_*.txt
+cookies.txt
+*.local
