@@ -1,0 +1,73 @@
+classDiagram
+    class CaptureItem {
+        +string type: 'text'|'image'|'video'|'file'|'table'
+        +string content
+        +string name?
+        +number size?
+        +string[][] rows?
+        +string[] headers?
+    }
+
+    class ContentBlock {
+        +string type: 'text'|'image'|'video'|'file'|'table'
+        +string content
+        +string fileName?
+        +number fileSize?
+        +string mimeType?
+        +boolean chatFormat?
+        +string sender?
+        +string timestamp?
+        +string[][] rows?
+        +string[] headers?
+    }
+
+    class CaptureData {
+        +CaptureItem[] items
+    }
+
+    class Requirement {
+        +number id
+        +string title
+        +string desc
+        +string[] images
+        +ContentBlock[] contentBlocks
+    }
+
+    class QuickCapture {
+        +parseHtmlToItems(html, plainText, api) Promise~CaptureItem[]~
+        +resolveFileItem(src, api) Promise~CaptureItem~
+        +handleSubmit() Promise~void~
+        -walk(node) void
+    }
+
+    class ContentBlocks {
+        +captureItemsToBlocks(items) ContentBlock[]
+        +blocksToCaptureItems(blocks) CaptureItem[]
+        +rebuildBlocksFromLegacy(desc, images) ContentBlock[]
+        +extractTextFromBlocks(blocks) string
+        +extractImagesFromBlocks(blocks) string[]
+    }
+
+    class ContentBlockRenderer {
+        +blocks: ContentBlock[]
+        +onImageClick(index) void?
+    }
+
+    class TextBlock
+    class ImageBlock
+    class VideoBlock
+    class FileBlock
+    class TableBlock
+
+    CaptureItem --> ContentBlock : captureItemsToBlocks()
+    ContentBlock --> CaptureItem : blocksToCaptureItems()
+    CaptureData "1" --> "*" CaptureItem
+    Requirement "1" --> "*" ContentBlock
+    QuickCapture --> CaptureItem : produces
+    QuickCapture --> ContentBlocks : uses
+    ContentBlockRenderer --> ContentBlock : renders
+    ContentBlockRenderer --> TextBlock : case 'text'
+    ContentBlockRenderer --> ImageBlock : case 'image'
+    ContentBlockRenderer --> VideoBlock : case 'video'
+    ContentBlockRenderer --> FileBlock : case 'file'
+    ContentBlockRenderer --> TableBlock : case 'table'

@@ -1,0 +1,109 @@
+sequenceDiagram
+    participant User as 用户 (Ctrl+V)
+    participant Browser as Browser ClipboardEvent
+    participant IPC as Electron IPC (main.cjs)
+    participant QC as QuickCapture.parseHtmlToItems
+    participant FS as resolveFileItem
+    participant State as React setCaptured
+    participant Submit as handleSubmit
+    participant API as /api/requirements
+    participant DB as SQLite (main.cjs)
+    participant Detail as Requirements.tsx
+    participant Renderer as ContentBlockRenderer
+
+    User->>Browser: Ctrl+V 粘贴
+    Browser->>Browser: dt.getData('text/plain')
+    Browser->>Browser: dt.getData('text/html')
+    Browser-->>Browser: dt.items → raw blobs
+
+    alt HTML empty in browser
+        Browser->>IPC: readClipboardHTML()
+        IPC-->>Browser: html string
+    end
+
+    Browser->>QC: parseHtmlToItems(html, plainText, api)
+
+    QC->>QC: ① clean HTML (nbsp, br)
+    QC->>QC: ② extract media URLs (imgRx, videoRx, linkRx)
+
+    loop each media URL
+        alt data: URL
+            QC->>QC: push { type:'image', content:url }
+        else http(s) URL
+            QC->>QC: push { type:'image', content:url }
+        else file:// URL
+            QC->>FS: resolveFileItem(url)
+            FS->>IPC: readLocalFile(path)
+            IPC-->>FS: dataURL or null
+            FS-->>QC: CaptureItem or null
+        end
+    end
+
+    Note over QC: resolvedMedia[] built
+
+    QC->>QC: ③ hasTableOrVideo check
+
+    alt plainText exists AND no table/video
+        QC->>QC: Text-based: [图片]/[视频] markers → resolvedMedia
+        Note over QC: ✅ resolvedMedia used correctly
+    else hasTableOrVideo OR no plainText
+        QC->>QC: HTML-only walk()
+        Note over QC: 🔴 BREAK: walk() <video> uses raw src
+        Note over QC: 🔴 BREAK: resolvedMedia DISCARDED
+        loop walk DOM nodes
+            alt <img>
+                QC->>QC: push { type:'image', content:rawSrc } ⚠
+            else <video>
+                QC->>QC: push { type:'video', content:rawSrc } 🔴
+            else <table>
+                QC->>QC: push { type:'table', rows, headers } ✅
+            else text node
+                QC->>QC: push { type:'text', content }
+            end
+        end
+    end
+
+    QC-->>Browser: CaptureItem[]
+
+    Browser->>Browser: emptyVideos fallback
+    Note over Browser: 🔴 walk() videos have non-empty content
+    Note over Browser: → fallback NOT triggered for walk() videos
+
+    Browser->>Browser: raw blobs → dataURL
+    Browser->>State: setCaptured({ items })
+
+    Note over State: ⚠ UI: no table rendering in preview
+
+    User->>Submit: 点击"提交需求"
+    Submit->>Submit: captureItemsToBlocks(finalItems)
+    Note over Submit: CaptureItem[] → ContentBlock[]
+    Submit->>API: POST { content_blocks: JSON.stringify(blocks) }
+
+    API->>DB: INSERT INTO requirements (..., content_blocks)
+    DB-->>API: newId
+    API-->>Submit: { success, id }
+
+    Submit->>Detail: refreshMainList()
+
+    Detail->>API: GET /api/requirements/:id
+    API->>DB: SELECT * FROM requirements WHERE id=?
+    DB-->>API: row (content_blocks at index 19)
+    API->>API: formatReq: JSON.parse(r[19])
+    API-->>Detail: { contentBlocks: ContentBlock[] }
+
+    Detail->>Renderer: <ContentBlockRenderer blocks={blocks} />
+
+    loop each ContentBlock
+        alt type='text'
+            Renderer->>Renderer: <TextBlock> ✅
+        else type='image'
+            Renderer->>Renderer: <ImageBlock> ✅
+        else type='video'
+            Renderer->>Renderer: <VideoBlock> ✅
+            Note over Renderer: ⚠ content may be file path, not dataURL
+        else type='file'
+            Renderer->>Renderer: <FileBlock> ✅
+        else type='table'
+            Renderer->>Renderer: <TableBlock> ✅
+        end
+    end
