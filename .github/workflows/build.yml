@@ -1,0 +1,66 @@
+name: Build Windows App
+
+on:
+  push:
+    branches: [master]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+          lfs: false
+
+      - name: Clean test data
+        shell: bash
+        run: |
+          rm -rf backend/data/ backend/api_*.txt backend/api_*.json backend/test_* backend/*.sh
+          echo "Test data cleared"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Auto-bump version
+        shell: bash
+        run: node -e "const p=require('./package.json');p.version='1.0.'+process.env.GITHUB_RUN_NUMBER;require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Build installer
+        run: npx electron-builder --win --publish never
+
+      - name: Release
+        uses: softprops/action-gh-release@v2.6.2
+        if: success()
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: Workit v${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            release/*.exe
+            release/*.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
