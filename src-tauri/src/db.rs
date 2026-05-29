@@ -4,6 +4,70 @@ use std::path::PathBuf;
 use log::{info, error};
 use crate::crypto::{encrypt_api_key, decrypt_api_key};
 
+/// Call AI provider to analyze text content
+fn call_ai_for_analysis(
+    base_url: &str,
+    api_key: &str,
+    model_id: &str,
+    content: &str,
+    prompt_template: &str,
+) -> Result<(String, Vec<String>), String> {
+    let client = reqwest::blocking::Client::new();
+    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+
+    let body = serde_json::json!({
+        "model": model_id,
+        "messages": [
+            {"role": "system", "content": prompt_template},
+            {"role": "user", "content": content}
+        ],
+        "max_tokens": 1024,
+        "temperature": 0.3
+    });
+
+    let res = client
+        .post(&url)
+        .header("Authorization", format!("Bearer {}", api_key))
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(30))
+        .send()
+        .map_err(|e| format!("AI request failed: {}", e))?;
+
+    if !res.status().is_success() {
+        return Err(format!("AI API error: {}", res.status()));
+    }
+
+    let response: serde_json::Value = res.json().map_err(|e| format!("AI response parse error: {}", e))?;
+
+    let text = response
+        .get("choices")
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+        .and_then(|c| c.get("message"))
+        .and_then(|m| m.get("content"))
+        .and_then(|t| t.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    // Try to parse as JSON array of tags
+    let tags: Vec<String> = serde_json::from_str::<Vec<String>>(&text)
+        .map_err(|_| ())
+        .or_else(|_| {
+            let tag_re = ::regex::Regex::new(r#"["']([^"']+)["']"#).ok();
+            if let Some(re) = tag_re {
+                Ok(re.captures_iter(&text)
+                    .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+                    .collect())
+            } else {
+                Err(())
+            }
+        })
+        .unwrap_or_else(|_| vec![]);
+
+    Ok((text, tags))
+}
+
 pub struct DbState {
     pub conn: Connection,
     pub db_path: PathBuf,
@@ -710,11 +774,122 @@ fn insights_charts(db: &DbState) -> JsonValue {
     serde_json::json!({ "barData": bar_data, "pieData": pie_data })
 }
 
-fn handle_ai_insights(_db: &DbState, method: &str) -> JsonValue {
+fn handle_ai_insights(db: &DbState, method: &str) -> JsonValue {
     if method == "POST" {
-        serde_json::json!({ "error": "AI insights not yet implemented in Tauri version" })
+        // Find default model
+        let mut stmt = match db.conn.prepare("SELECT base_url, api_key, model_id FROM models WHERE enabled = 1 LIMIT 1") {
+            Ok(s) => s,
+            Err(_) => return serde_json::json!({ "error": "No model configured" }),
+        };
+        let (base_url, encrypted_key, model_id): (String, String, String) = match stmt.query_row(params![], |row| {
+            Ok((
+                row.get::<_, String>(0).unwrap_or_default(),
+                row.get::<_, String>(1).unwrap_or_default(),
+                row.get::<_, String>(2).unwrap_or_default(),
+            ))
+        }) {
+            Ok(m) => m,
+            Err(_) => return serde_json::json!({ "error": "No model configured" }),
+        };
+
+        let api_key = crate::crypto::decrypt_api_key(&encrypted_key);
+        if api_key.is_empty() {
+            return serde_json::json!({ "error": "Model API key not set" });
+        }
+
+        // Get recent requirements
+        let mut stmt = match db.conn.prepare("SELECT title, description, status, category FROM requirements ORDER BY created_at DESC LIMIT 20") {
+            Ok(s) => s,
+            Err(_) => return serde_json::json!({ "error": "Failed to query requirements" }),
+        };
+        let mut rows = match stmt.query([]) {
+            Ok(r) => r,
+            Err(_) => return serde_json::json!({ "error": "Query failed" }),
+        };
+        let mut reqs = vec![];
+        while let Ok(Some(row)) = rows.next() {
+            reqs.push(serde_json::json!({
+                "title": row.get::<_, String>(0).unwrap_or_default(),
+                "description": row.get::<_, String>(1).unwrap_or_default(),
+                "status": row.get::<_, String>(2).unwrap_or_default(),
+                "category": row.get::<_, String>(3).unwrap_or_default(),
+            }));
+        }
+
+        // Get recent documents
+        let mut stmt2 = match db.conn.prepare("SELECT title, content, category FROM documents ORDER BY created_at DESC LIMIT 10") {
+            Ok(s) => s,
+            Err(_) => return serde_json::json!({ "error": "Failed to query documents" }),
+        };
+        let mut doc_rows = match stmt2.query([]) {
+            Ok(r) => r,
+            Err(_) => return serde_json::json!({ "error": "Query failed" }),
+        };
+        let mut docs = vec![];
+        while let Ok(Some(row)) = doc_rows.next() {
+            let content: String = row.get(1).unwrap_or_default();
+            if !content.is_empty() {
+                docs.push(serde_json::json!({
+                    "title": row.get::<_, String>(0).unwrap_or_default(),
+                    "category": row.get::<_, String>(2).unwrap_or_default(),
+                }));
+            }
+        }
+
+        let context = serde_json::json!({
+            "requirements": reqs,
+            "documents": docs,
+            "totalRequirements": reqs.len(),
+            "totalDocuments": docs.len(),
+        });
+
+        let prompt = format!(
+            "你是一个智能体工作台的 AI 洞察助手。请分析以下数据，生成有价值的洞察和建议。\n\n## 数据\n{}\n\n## 要求\n请生成 3-5 条具体、可操作的洞察，以 JSON 数组格式返回。每条洞察格式：\n{{\n  \"type\": \"info|warning|success\",\n  \"title\": \"洞察标题（10字内）\",\n  \"content\": \"洞察内容（50字内）\",\n  \"icon\": \"InsightIcon\"\n}}\n\n只返回 JSON 数组，不要其他文字。",
+            serde_json::to_string(&context).unwrap_or_default()
+        );
+
+        match call_ai_for_analysis(&base_url, &api_key, &model_id, "", &prompt) {
+            Ok((raw, _)) => {
+                // Try to parse as JSON array
+                let insights: Vec<serde_json::Value> = serde_json::from_str(&raw).unwrap_or_else(|_| {
+                    // Fallback: wrap raw text as single insight
+                    vec![serde_json::json!({
+                        "type": "info",
+                        "title": "洞察",
+                        "content": raw.chars().take(80).collect::<String>(),
+                        "icon": "LightbulbIcon"
+                    })]
+                });
+                serde_json::json!(insights)
+            }
+            Err(e) => {
+                error!("AI insights generation failed: {}", e);
+                serde_json::json!({ "error": e })
+            }
+        }
     } else {
-        serde_json::json!([])
+        // GET returns stored insights from requirements with ai_summary
+        let mut stmt = match db.conn.prepare("SELECT title, ai_summary, ai_tags FROM requirements WHERE ai_summary IS NOT NULL AND ai_summary != '' ORDER BY updated_at DESC LIMIT 10") {
+            Ok(s) => s,
+            Err(_) => return serde_json::json!([]),
+        };
+        let mut rows = match stmt.query([]) {
+            Ok(r) => r,
+            Err(_) => return serde_json::json!([]),
+        };
+        let mut insights = vec![];
+        while let Ok(Some(row)) = rows.next() {
+            let ai_summary: String = row.get(1).unwrap_or_default();
+            if !ai_summary.is_empty() {
+                insights.push(serde_json::json!({
+                    "type": "info",
+                    "title": row.get::<_, String>(0).unwrap_or_default(),
+                    "content": ai_summary.chars().take(80).collect::<String>(),
+                    "icon": "LightbulbIcon"
+                }));
+            }
+        }
+        serde_json::json!(insights)
     }
 }
 
@@ -739,15 +914,160 @@ fn storage_stats(_db: &DbState) -> JsonValue {
 fn handle_resource_action(db: &DbState, res_type: &str, res_id: i64, action: &str) -> JsonValue {
     match action {
         "analyze" => {
-            let desc: String = if res_type == "requirements" {
-                db.conn.query_row("SELECT description FROM requirements WHERE id = ?", params![res_id], |row| row.get(0)).unwrap_or_default()
+            let (desc, title) = if res_type == "requirements" {
+                let mut stmt = match db.conn.prepare("SELECT description, title FROM requirements WHERE id = ?") {
+                    Ok(s) => s,
+                    Err(_) => return serde_json::json!({ "error": "Query failed" }),
+                };
+                match stmt.query_row(params![res_id], |row| Ok((row.get::<_, String>(0).unwrap_or_default(), row.get::<_, String>(1).unwrap_or_default()))) {
+                    Ok((d, t)) => (d, t),
+                    Err(_) => return serde_json::json!({ "error": "Not found" }),
+                }
+            } else if res_type == "documents" {
+                let mut stmt = match db.conn.prepare("SELECT content, title FROM documents WHERE id = ?") {
+                    Ok(s) => s,
+                    Err(_) => return serde_json::json!({ "error": "Query failed" }),
+                };
+                match stmt.query_row(params![res_id], |row| Ok((row.get::<_, String>(0).unwrap_or_default(), row.get::<_, String>(1).unwrap_or_default()))) {
+                    Ok((d, t)) => (d, t),
+                    Err(_) => return serde_json::json!({ "error": "Not found" }),
+                }
             } else {
-                String::new()
+                return serde_json::json!({ "error": "Unsupported type" });
             };
+
             if desc.is_empty() {
-                return serde_json::json!({ "error": "No description to analyze" });
+                return serde_json::json!({ "error": "No content to analyze" });
             }
-            serde_json::json!({ "success": true, "aiSummary": "", "aiTags": [], "imageDescriptions": [] })
+
+            // Find default model
+            let mut stmt = match db.conn.prepare("SELECT name, provider, base_url, api_key, model_id FROM models WHERE enabled = 1 AND is_default = 1 LIMIT 1") {
+                Ok(s) => s,
+                Err(_) => return serde_json::json!({ "error": "No model configured" }),
+            };
+            let model_opt: Option<(String, String, String, String, String)> = stmt.query_row(params![], |row| {
+                Ok((
+                    row.get::<_, String>(0).unwrap_or_default(),
+                    row.get::<_, String>(1).unwrap_or_default(),
+                    row.get::<_, String>(2).unwrap_or_default(),
+                    row.get::<_, String>(3).unwrap_or_default(),
+                    row.get::<_, String>(4).unwrap_or_default(),
+                ))
+            }).ok();
+
+            // Fallback: any enabled model
+            let (model_name, provider, base_url, encrypted_key, model_id) = match model_opt {
+                Some(m) => m,
+                None => {
+                    let mut stmt2 = match db.conn.prepare("SELECT name, provider, base_url, api_key, model_id FROM models WHERE enabled = 1 LIMIT 1") {
+                        Ok(s) => s,
+                        Err(_) => return serde_json::json!({ "error": "No model configured" }),
+                    };
+                    match stmt2.query_row(params![], |row| {
+                        Ok((
+                            row.get::<_, String>(0).unwrap_or_default(),
+                            row.get::<_, String>(1).unwrap_or_default(),
+                            row.get::<_, String>(2).unwrap_or_default(),
+                            row.get::<_, String>(3).unwrap_or_default(),
+                            row.get::<_, String>(4).unwrap_or_default(),
+                        ))
+                    }) {
+                        Ok(m) => m,
+                        Err(_) => return serde_json::json!({ "error": "No model configured" }),
+                    }
+                }
+            };
+
+            if base_url.is_empty() || model_id.is_empty() {
+                return serde_json::json!({ "error": "Model not fully configured" });
+            }
+
+            let api_key = crate::crypto::decrypt_api_key(&encrypted_key);
+            if api_key.is_empty() {
+                return serde_json::json!({ "error": "Model API key not set" });
+            }
+
+            let prompt = format!(
+                "你是一个需求分析和标签提取专家。请分析以下内容，提取关键信息。\n\n## 内容\n{}\n\n## 要求\n1. 用一句话总结内容要点（aiSummary）\n2. 提取 3-5 个关键词标签（aiTags，JSON 数组格式）\n3. 如果包含图片，描述图片内容（imageDescriptions，JSON 数组格式）\n\n请以 JSON 格式返回：{{\"aiSummary\": \"...\", \"aiTags\": [\"标签1\", \"标签2\", ...], \"imageDescriptions\": [\"图片1描述\", ...]}}",
+                &desc
+            );
+
+            let (ai_summary, ai_tags) = match call_ai_for_analysis(&base_url, &api_key, &model_id, &desc, &prompt) {
+                Ok((summary, tags)) => (summary, tags),
+                Err(e) => {
+                    error!("AI analysis failed: {}", e);
+                    return serde_json::json!({ "error": e });
+                }
+            };
+
+            // Update database
+            let ai_summary_val = ai_summary.clone();
+            let ai_tags_json = serde_json::to_string(&ai_tags).unwrap_or_else(|_| "[]".to_string());
+            if res_type == "requirements" {
+                db.conn.execute(
+                    "UPDATE requirements SET ai_summary = ?, ai_tags = ? WHERE id = ?",
+                    params![ai_summary_val, ai_tags_json, res_id],
+                ).ok();
+            } else {
+                db.conn.execute(
+                    "UPDATE documents SET image_descriptions = ? WHERE id = ?",
+                    params![ai_tags_json, res_id],
+                ).ok();
+            }
+
+            serde_json::json!({
+                "success": true,
+                "aiSummary": ai_summary,
+                "aiTags": ai_tags,
+                "imageDescriptions": []
+            })
+        }
+        "summarize" => {
+            if res_type != "documents" {
+                return serde_json::json!({ "error": "summarize only for documents" });
+            }
+            let content: String = db.conn.query_row(
+                "SELECT content FROM documents WHERE id = ?", params![res_id],
+                |row| row.get(0)
+            ).unwrap_or_default();
+
+            if content.is_empty() {
+                return serde_json::json!({ "error": "No content to summarize" });
+            }
+
+            let mut stmt = match db.conn.prepare("SELECT base_url, api_key, model_id FROM models WHERE enabled = 1 LIMIT 1") {
+                Ok(s) => s,
+                Err(_) => return serde_json::json!({ "error": "No model configured" }),
+            };
+            let (base_url, encrypted_key, model_id): (String, String, String) = match stmt.query_row(params![], |row| {
+                Ok((
+                    row.get::<_, String>(0).unwrap_or_default(),
+                    row.get::<_, String>(1).unwrap_or_default(),
+                    row.get::<_, String>(2).unwrap_or_default(),
+                ))
+            }) {
+                Ok(m) => m,
+                Err(_) => return serde_json::json!({ "error": "No model configured" }),
+            };
+
+            let api_key = crate::crypto::decrypt_api_key(&encrypted_key);
+            let prompt = format!("请总结以下文档，用简洁的语言概括要点（不超过100字）：\n\n{}", &content);
+            let (summary, _) = match call_ai_for_analysis(&base_url, &api_key, &model_id, &content, &prompt) {
+                Ok(r) => r,
+                Err(e) => {
+                    error!("AI summarize failed: {}", e);
+                    return serde_json::json!({ "error": e });
+                }
+            };
+
+            serde_json::json!({ "success": true, "summary": summary })
+        }
+        "analyze-images" => {
+            if res_type != "documents" {
+                return serde_json::json!({ "error": "analyze-images only for documents" });
+            }
+            // For now, return empty - image analysis requires vision model
+            serde_json::json!({ "success": true, "imageDescriptions": [] })
         }
         _ => serde_json::json!({ "error": "Unknown action" }),
     }

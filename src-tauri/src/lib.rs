@@ -253,25 +253,44 @@ fn close_qc_form(_app: AppHandle<Wry>) -> bool {
     }
 }
 
-// Auto-update stubs (using Tauri built-in updater plugin in production)
+// Auto-update via GitHub releases (lightweight, no signature verification)
 #[tauri::command]
 fn check_for_update(_app: AppHandle<Wry>) -> serde_json::Value {
-    serde_json::json!({
-        "available": false,
-        "current": env!("CARGO_PKG_VERSION"),
-        "error": "Auto-update not configured in Tauri build"
-    })
+    let current = env!("CARGO_PKG_VERSION");
+    let client = reqwest::blocking::Client::new();
+    let url = "https://api.github.com/repos/eafenzhang/workitt/releases/latest";
+
+    match client.get(url)
+        .header("User-Agent", "Workitt")
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+    {
+        Ok(res) if res.status().is_success() => {
+            if let Ok(json) = res.json::<serde_json::Value>() {
+                let tag = json.get("tag_name").and_then(|t| t.as_str()).unwrap_or("");
+                let version = tag.trim_start_matches('v');
+                if version > current {
+                    return serde_json::json!({
+                        "available": true,
+                        "version": version,
+                        "current": current,
+                        "notes": json.get("body").and_then(|b| b.as_str()).unwrap_or("")
+                    });
+                }
+            }
+            serde_json::json!({ "available": false, "current": current })
+        }
+        _ => serde_json::json!({ "available": false, "current": current })
+    }
 }
 
 #[tauri::command]
 fn download_update() -> serde_json::Value {
-    serde_json::json!({ "ok": false, "error": "Auto-update not implemented" })
+    serde_json::json!({ "ok": false, "error": "Use the downloaded installer to update" })
 }
 
 #[tauri::command]
 fn install_update(_app: AppHandle<Wry>) -> bool {
-    // Would use app.restart() in real auto-update flow
-    error!("install_update called but not implemented");
     false
 }
 
