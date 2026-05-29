@@ -1,7 +1,10 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense, useMemo, memo } from 'react';
 import { ChevronLeftIcon, ChevronRightIcon, FileTextIcon } from 'lucide-react';
 import type { ContentBlock } from '../types/content';
-import FileChip, { getFileExt } from './FileChip';
+import FileChip, { getFileExt, DOC_EXTS } from './FileChip';
+import { downloadFile } from '../utils/download';
+
+const OfficePreview = lazy(() => import('./OfficePreview'));
 
 // ========== URL regex for auto-detection ==========
 const URL_REGEX = /(https?:\/\/[^\s<>"']+)/g;
@@ -111,17 +114,15 @@ function ImageBlock({
   );
 }
 
-/** Render video player */
+/** Render video player — click to fullscreen */
 function VideoBlock({ block }: { block: ContentBlock }) {
+  const [fullscreen, setFullscreen] = useState(false);
+
   if (!block.content) {
     return (
       <div
         className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px]"
-        style={{
-          background: 'var(--wiki-surface)',
-          color: 'var(--wiki-text3)',
-          border: '1px solid var(--wiki-border)',
-        }}
+        style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}
         title="剪贴板未包含视频数据，请手动上传视频文件"
       >
         🎥 视频（无数据）
@@ -129,43 +130,58 @@ function VideoBlock({ block }: { block: ContentBlock }) {
     );
   }
 
-  // Data URL (base64) or HTTP URL
   const isDataUrl = block.content.startsWith('data:');
 
   return (
-    <div className="relative group max-w-full" style={{ maxWidth: '480px' }}>
-      <video
-        key={block.content?.substring(0, 40)}
-        src={block.content}
-        controls
-        preload="metadata"
-        crossOrigin={isDataUrl ? undefined : 'anonymous'}
-        className="rounded max-w-full"
-        style={{ border: '1px solid var(--wiki-border)', maxHeight: '320px', width: '100%' }}
-        onError={(e) => {
-          const el = e.currentTarget;
-          el.style.display = 'none';
-          const fallback = el.nextElementSibling as HTMLElement | null;
-          if (fallback) fallback.style.display = 'flex';
-        }}
-      >
-        您的浏览器不支持视频播放
-      </video>
-      <div
-        className="hidden items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px]"
-        style={{
-          background: 'var(--wiki-surface)',
-          color: '#ef4444',
-          border: '1px solid #ef444430',
-        }}
-      >
-        ⚠️ 视频加载失败 — {block.content?.startsWith('data:') ? '数据不完整' : 'URL 不可访问或跨域限制'}
+    <>
+      <div className="relative group max-w-full cursor-pointer" style={{ maxWidth: '480px' }} onClick={() => setFullscreen(true)}>
+        <video
+          key={block.content?.substring(0, 40)}
+          src={block.content}
+          controls
+          preload="metadata"
+          crossOrigin={isDataUrl ? undefined : 'anonymous'}
+          className="rounded max-w-full pointer-events-none"
+          style={{ border: '1px solid var(--wiki-border)', maxHeight: '320px', width: '100%' }}
+          onError={(e) => {
+            const el = e.currentTarget;
+            el.style.display = 'none';
+            const fallback = el.nextElementSibling as HTMLElement | null;
+            if (fallback) fallback.style.display = 'flex';
+          }}
+        >
+          您的浏览器不支持视频播放
+        </video>
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity rounded" style={{ background: 'rgba(0,0,0,0.3)' }}>
+          <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,255,255,0.2)' }}>
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="white"><polygon points="5,3 19,12 5,21" /></svg>
+          </div>
+        </div>
+        <div
+          className="hidden items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px]"
+          style={{ background: 'var(--wiki-surface)', color: '#ef4444', border: '1px solid #ef444430' }}
+        >
+          ⚠️ 视频加载失败 — {block.content?.startsWith('data:') ? '数据不完整' : 'URL 不可访问或跨域限制'}
+        </div>
       </div>
-    </div>
+
+      {/* Fullscreen overlay */}
+      {fullscreen && (
+        <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: '#000' }}>
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ background: 'rgba(255,255,255,0.05)' }}>
+            <div className="text-white/60 text-sm truncate">{block.fileName || '视频'}</div>
+            <button onClick={() => setFullscreen(false)} className="text-white/60 hover:text-white text-2xl leading-none">×</button>
+          </div>
+          <div className="flex-1 flex items-center justify-center">
+            <video src={block.content} controls autoPlay className="max-w-full max-h-full" />
+          </div>
+        </div>
+      )}
+    </>
   );
 }
 
-/** Render file card with inline preview for PDFs and office docs */
+/** Render file card with fullscreen modal preview */
 function FileBlock({ block }: { block: ContentBlock }) {
   const fname = block.fileName || getFileNameFromUrl(block.content);
   const ext = getFileExt(fname);
@@ -191,6 +207,8 @@ function FileBlock({ block }: { block: ContentBlock }) {
 
   const embedUrl = manualDataUrl ? resolveEmbedUrl(manualDataUrl) : resolveEmbedUrl(url);
 
+  const handleDownload = () => downloadFile(url, fname || 'download' + ext);
+
   // Handle manual file upload
   const handleManualUpload = () => {
     const input = document.createElement('input');
@@ -205,63 +223,109 @@ function FileBlock({ block }: { block: ContentBlock }) {
     input.click();
   };
 
-  // PDF: inline embed preview
+  const canPreview = ext === '.pdf' || ['.doc','.docx','.xls','.xlsx','.ppt','.pptx'].includes(ext);
+  const hasContent = !!embedUrl;
+  const showExpand = canPreview && hasContent;
+
+  // ── Fullscreen preview overlay ──
+  const PreviewOverlay = expanded && showExpand ? (
+    <div className="fixed inset-0 z-[70] flex flex-col" style={{ background: '#1a1a2e' }}>
+      {/* Top bar */}
+      <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ background: 'rgba(0,0,0,0.4)' }}>
+        <div className="text-white/80 text-sm truncate max-w-[60%]">{fname}</div>
+        <div className="flex items-center gap-3">
+          <button onClick={handleDownload} className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-white/80 hover:text-white hover:bg-white/10 transition-colors" title="下载">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            下载
+          </button>
+          <button onClick={() => setExpanded(false)} className="text-white/60 hover:text-white text-2xl leading-none">×</button>
+        </div>
+      </div>
+      {/* Content */}
+      <div className="flex-1 overflow-hidden">
+        {/* PDF */}
+        {ext === '.pdf' && (
+          <embed src={embedUrl} type="application/pdf" className="w-full h-full border-0" />
+        )}
+        {/* Office: data URL — JS render */}
+        {['.doc','.docx','.xls','.xlsx','.ppt','.pptx'].includes(ext) && url.startsWith('data:') && (
+          <div className="w-full h-full" style={{ background: '#fff' }}>
+            <Suspense fallback={<div className="flex items-center justify-center h-full text-gray-400 text-sm">加载预览...</div>}>
+              <OfficePreview dataUrl={url} fileName={fname} />
+            </Suspense>
+          </div>
+        )}
+        {/* Office: HTTP URL — Google Docs viewer */}
+        {['.doc','.docx','.xls','.xlsx','.ppt','.pptx'].includes(ext) && url.startsWith('http') && (
+          <iframe src={'https://docs.google.com/viewer?url=' + encodeURIComponent(url) + '&embedded=true'} className="w-full h-full border-0" title={fname} sandbox="allow-scripts allow-same-origin" />
+        )}
+      </div>
+    </div>
+  ) : null;
+
+  // ── Chip button ──
+  const chipLabel = canPreview && hasContent
+    ? '点击预览'
+    : canPreview && !hasContent
+    ? '剪贴板无文件数据'
+    : ext
+    ? '下载'
+    : '';
+
+  // PDF preview chip
   if (ext === '.pdf' && embedUrl) {
     return (
-      <div className="flex flex-col gap-1">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity text-left"
-          style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}
-        >
+      <>
+        <button onClick={() => setExpanded(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity text-left"
+          style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
           <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#ef444420' }}>
             <FileTextIcon size={16} style={{ color: '#ef4444' }} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium text-wiki-text truncate">{fname}</div>
-            <div className="text-[10px] text-wiki-text3">点击{expanded ? '收起' : '预览'} PDF</div>
+            <div className="text-[10px] text-wiki-text3">点击全屏预览 PDF</div>
           </div>
         </button>
-        {expanded && (
-          <embed
-            src={embedUrl}
-            type="application/pdf"
-            className="rounded w-full"
-            style={{ border: '1px solid var(--wiki-border)', height: '500px' }}
-          />
-        )}
-      </div>
+        {PreviewOverlay}
+      </>
     );
   }
 
-  // Office docs (.docx, .xlsx, .pptx): Google Docs Viewer (HTTP only)
-  if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext) && url.startsWith('http')) {
-    const viewerUrl = 'https://docs.google.com/viewer?url=' + encodeURIComponent(url) + '&embedded=true';
+  // Office docs with data: URL
+  if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext) && url.startsWith('data:')) {
     return (
-      <div className="flex flex-col gap-1">
-        <button
-          onClick={() => setExpanded(!expanded)}
-          className="inline-flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity text-left"
-          style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}
-        >
+      <>
+        <button onClick={() => setExpanded(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity text-left"
+          style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
           <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#6366f120' }}>
             <FileTextIcon size={16} style={{ color: '#6366f1' }} />
           </div>
           <div className="flex-1 min-w-0">
             <div className="text-xs font-medium text-wiki-text truncate">{fname}</div>
-            <div className="text-[10px] text-wiki-text3">点击{expanded ? '收起' : '在线预览'}（Google Docs）</div>
+            <div className="text-[10px] text-wiki-text3">点击全屏预览文档</div>
           </div>
         </button>
-        {expanded && (
-          <iframe
-            src={viewerUrl}
-            className="rounded w-full"
-            style={{ border: '1px solid var(--wiki-border)', height: '500px' }}
-            title={fname}
-            sandbox="allow-scripts allow-same-origin"
-          />
-        )}
-      </div>
+        {PreviewOverlay}
+      </>
+    );
+  }
+
+  // Office docs: HTTP Google Docs Viewer
+  if (['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx'].includes(ext) && url.startsWith('http')) {
+    return (
+      <>
+        <button onClick={() => setExpanded(true)} className="inline-flex items-center gap-2 px-3 py-2 rounded-lg hover:opacity-80 transition-opacity text-left"
+          style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+          <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#6366f120' }}>
+            <FileTextIcon size={16} style={{ color: '#6366f1' }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs font-medium text-wiki-text truncate">{fname}</div>
+            <div className="text-[10px] text-wiki-text3">点击全屏预览（Google Docs）</div>
+          </div>
+        </button>
+        {PreviewOverlay}
+      </>
     );
   }
 
@@ -371,7 +435,7 @@ export interface ContentBlockRendererProps {
  *
  * Used by both QuickCapture preview and Requirements detail page.
  */
-export default function ContentBlockRenderer({
+export default memo(function ContentBlockRenderer({
   blocks,
   onImageClick,
   imageList,
@@ -380,21 +444,27 @@ export default function ContentBlockRenderer({
   const [lightboxIndex, setLightboxIndex] = useState<number | null>(null);
 
   // Compute all image URLs from blocks for lightbox navigation
-  const allImageUrls =
-    imageList ||
-    blocks.filter((b) => b.type === 'image' && b.content).map((b) => b.content);
+  const allImageUrls = useMemo(
+    () =>
+      imageList ||
+      blocks.filter((b) => b.type === 'image' && b.content).map((b) => b.content),
+    [imageList, blocks]
+  );
 
   // Build a map: image block index → global image URL index
-  const imageIndexMap: number[] = [];
-  let globalImgIdx = 0;
-  for (const block of blocks) {
-    if (block.type === 'image' && block.content) {
-      imageIndexMap.push(globalImgIdx);
-      globalImgIdx++;
-    } else if (block.type === 'image') {
-      imageIndexMap.push(-1); // placeholder image
+  const imageIndexMap = useMemo(() => {
+    const map: number[] = [];
+    let globalImgIdx = 0;
+    for (const block of blocks) {
+      if (block.type === 'image' && block.content) {
+        map.push(globalImgIdx);
+        globalImgIdx++;
+      } else if (block.type === 'image') {
+        map.push(-1);
+      }
     }
-  }
+    return map;
+  }, [blocks]);
 
   const openLightbox = useCallback(
     (blockImageIdx: number) => {
@@ -527,4 +597,4 @@ export default function ContentBlockRenderer({
       )}
     </>
   );
-}
+});

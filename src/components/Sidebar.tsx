@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { memo, useCallback } from 'react';
 import { DatabaseIcon, LightbulbIcon, LayoutDashboardIcon, SparklesIcon, SettingsIcon, ServerIcon, CpuIcon, MessageSquareIcon } from 'lucide-react';
 
 interface SidebarProps {
@@ -18,27 +18,22 @@ const navItems = [
   { id: 'messages', label: `消息中心`, icon: MessageSquareIcon, color: '#ec4899', path: '/messages' },
 ];
 
-export default function Sidebar({
+export default memo(function Sidebar({
   activeTab = 'dashboard',
   onTabChange = () => {},
   collapsed = false,
   onCollapsedChange = () => {},
 }: SidebarProps) {
-  const navigate = useNavigate();
 
-  const isActive = (item: typeof navItems[0]) => {
-    return item.id === activeTab;
-  };
-
-  const handleNavClick = (item: typeof navItems[0]) => {
-    navigate(item.path);
+  const handleNavClick = useCallback((item: typeof navItems[0]) => {
     onTabChange(item.id);
-  };
+  }, [onTabChange]);
 
-  const handleSettingsClick = () => {
-    navigate('/settings');
+  const handleSettingsClick = useCallback(() => {
     onTabChange('settings');
-  };
+  }, [onTabChange]);
+
+  const isActive = (item: typeof navItems[0]) => item.id === activeTab;
 
   const width = collapsed ? '0px' : '52px';
   const minWidth = collapsed ? '0px' : '52px';
@@ -137,4 +132,4 @@ export default function Sidebar({
       </div>
     </aside>
   );
-}
+});

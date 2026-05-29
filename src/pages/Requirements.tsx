@@ -1,28 +1,12 @@
 import { apiFetch } from '../api';
-import { useEffect, useState, useRef, useMemo, memo } from 'react';
-import { PlusIcon, SearchIcon, FilterIcon, SparklesIcon, CheckCircleIcon, ClockIcon, AlertCircleIcon, TagIcon, UserIcon, CalendarIcon, XIcon, EditIcon, TrashIcon, ImageIcon, ChevronDownIcon, ArrowUpIcon, ArrowDownIcon, ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { useEffect, useState, useRef, useMemo, memo, useCallback } from 'react';
+import { PlusIcon, SearchIcon, FilterIcon, SparklesIcon, CheckCircleIcon, AlertCircleIcon, UserIcon, CalendarIcon, XIcon, EditIcon, TrashIcon, ImageIcon, ChevronDownIcon, ArrowUpIcon, ChevronLeftIcon, ChevronRightIcon, FileTextIcon, FileIcon, ArchiveIcon, CodeIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAuth } from '../context/AuthContext';
-import { FileTextIcon, FileIcon, ArchiveIcon, CodeIcon } from 'lucide-react';
 import type { ContentBlock } from '../types/content';
 import ContentBlockRenderer from '../components/ContentBlockRenderer';
 import { rebuildBlocksFromLegacy } from '../utils/contentBlocks';
-
-const ARCHIVE_EXTS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tgz'];
-const DOC_EXTS = ['.doc', '.docx', '.pdf', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.rtf', '.odt', '.ods', '.odp'];
-const CODE_EXTS = ['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.yaml', '.yml', '.toml', '.sql', '.py', '.js', '.ts', '.css'];
-
-function getFileExt(name: string): string {
-  const idx = name.lastIndexOf('.');
-  return idx >= 0 ? name.substring(idx).toLowerCase() : '';
-}
-
-function getFileCategory(ext: string): 'archive' | 'doc' | 'code' | 'file' {
-  if (ARCHIVE_EXTS.includes(ext)) return 'archive';
-  if (DOC_EXTS.includes(ext)) return 'doc';
-  if (CODE_EXTS.includes(ext)) return 'code';
-  return 'file';
-}
+import { DOC_EXTS, ARCHIVE_EXTS, CODE_EXTS, getFileExt, getFileCategory, formatFileSize } from '../components/FileChip';
 
 function getFileNameFromUrl(url: string): string {
   try {
@@ -30,12 +14,6 @@ function getFileNameFromUrl(url: string): string {
     const parts = pathname.split('/');
     return decodeURIComponent(parts[parts.length - 1] || url);
   } catch { return url; }
-}
-
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
 function isFileUrl(line: string): boolean {
@@ -114,6 +92,84 @@ const priorityConfig: Record<string, { color: string; bg: string }> = {
 const modules = ['系统后台', '机构后台', '品牌门店', '收银终端', '用户端', '开放平台'];
 const priorities = ['高', '中', '低'];
 
+// Memoized list item to avoid re-rendering all items on any state change
+function getContentTags(req: Requirement): string[] {
+  const tags: string[] = [];
+  const desc = req.desc || '';
+  if (desc.trim()) tags.push('文本');
+  if (/https?:\/\//.test(desc)) tags.push('链接');
+  if (/\[视频\]/.test(desc)) tags.push('视频');
+  if (/\[附件/.test(desc) || /\[文件[：:]/.test(desc)) {
+    if (!tags.includes('文件')) tags.push('文件');
+  }
+  if (req.images?.length) tags.push('图片');
+  const blocks = req.contentBlocks;
+  if (blocks?.length) {
+    for (const b of blocks) {
+      if (b.type === 'video' && !tags.includes('视频')) tags.push('视频');
+      if (b.type === 'file' && !tags.includes('文件')) tags.push('文件');
+      if (b.type === 'table' && !tags.includes('表格')) tags.push('表格');
+    }
+  }
+  return tags;
+}
+
+const ReqListItem = memo(function ReqListItem({
+  req, onOpen, formatDate,
+}: {
+  req: Requirement;
+  onOpen: (req: Requirement) => void;
+  formatDate: (d: string) => string;
+}) {
+  const statusCfg = statusConfig[req.status] || statusConfig['待评估'];
+  const priorityCfg = priorityConfig[req.priority] || priorityConfig['中'];
+  const StatusIcon = statusCfg.icon;
+  return (
+    <div onClick={() => onOpen(req)} className="p-5 rounded-lg cursor-pointer transition-all duration-200"
+      style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+      <div className="flex items-start justify-between mb-2">
+        <div className="flex items-center gap-3 flex-1">
+          <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: statusCfg.bg }}><StatusIcon size={14} style={{ color: statusCfg.color }} /></div>
+          <div className="flex-1">
+            <div className="text-sm font-semibold text-wiki-text mb-0.5">{req.aiSummary || req.desc?.substring(0, 50) || req.title}</div>
+            {req.aiSummary && <div className="text-xs text-wiki-text3 line-clamp-1">{req.title}</div>}
+          </div>
+        </div>
+        <div className="flex items-center gap-2 ml-4">
+          <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: priorityCfg.bg, color: priorityCfg.color }}>{req.priority}优先级</span>
+          <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: statusCfg.bg, color: statusCfg.color }}>{req.status}</span>
+        </div>
+      </div>
+      <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
+        <div className="flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><UserIcon size={11} /><span>{req.creator}</span></div>
+          <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><CalendarIcon size={11} /><span>{formatDate(req.createdAt)}</span></div>
+          <div className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md" style={{ background: `var(--wiki-surface2)`, color: `var(--wiki-text2)` }}>{req.module}</div>
+          {getContentTags(req).map(tag => (
+            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}>{tag}</span>
+          ))}
+        </div>
+        <div className="flex items-center gap-1.5 flex-wrap">{(req.aiTags || []).map((tag) => (<span key={tag} className="text-xs px-2.5 py-1 rounded-md font-medium" style={{ background: 'rgba(99,102,241,0.15)', color: '#6366f1' }}>#{tag}</span>))}</div>
+      </div>
+    </div>
+  );
+});
+
+// Memoized content blocks renderer for detail view — avoids rebuildBlocksFromLegacy on every render
+const MemoizedContentBlocks = memo(function MemoizedContentBlocks({
+  rawBlocks, desc, images,
+}: {
+  rawBlocks?: ContentBlock[];
+  desc: string;
+  images: string[];
+}) {
+  const blocks = useMemo(() => {
+    if (rawBlocks && rawBlocks.length > 0) return rawBlocks;
+    return rebuildBlocksFromLegacy(desc || '', images || []);
+  }, [rawBlocks, desc, images]);
+  return <ContentBlockRenderer blocks={blocks} />;
+});
+
 function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const { user } = useAuth();
   const [requirements, setRequirements] = useState<Requirement[]>([]);
@@ -140,6 +196,10 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const [previewIdx, setPreviewIdx] = useState(0);
   const previewImages = useRef<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Cleanup auto-analyze timer on unmount
+  useEffect(() => () => { if (autoAnalyzeRef.current) clearTimeout(autoAnalyzeRef.current); }, []);
 
   // Determine current view based on initialTab
   const viewType = initialTab?.type || 'requirements';
@@ -165,11 +225,11 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     return () => window.removeEventListener('keydown', handler);
   }, [previewImage]);
 
-  const fetchRequirements = () => {
+  const fetchRequirements = useCallback(() => {
     apiFetch('/api/requirements').then(r => r.json()).then(data => setRequirements(data));
-  };
+  }, []);
 
-  const filteredRequirements = requirements.filter(r => {
+  const filteredRequirements = useMemo(() => requirements.filter(r => {
     if (search) { const s = search.toLowerCase(); if (!(r.title||'').toLowerCase().includes(s) && !(r.desc||'').toLowerCase().includes(s)) return false; }
     if (filterStatus !== '全部' && r.status !== filterStatus) return false;
     if (filterPriority !== '全部' && r.priority !== filterPriority) return false;
@@ -178,24 +238,37 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     if (dateFrom && (!r.createdAt || r.createdAt < dateFrom)) return false;
     if (dateTo && (!r.createdAt || r.createdAt > dateTo)) return false;
     return true;
-  });
+  }), [requirements, search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo]);
 
   const detailReq = detailReqId ? requirements.find(r => r.id === detailReqId) : null;
+  // Load full contentBlocks on demand when listing excluded them
+  const [detailBlocks, setDetailBlocks] = useState<ContentBlock[] | undefined>(undefined);
+  useEffect(() => {
+    if (viewType?.startsWith('requirements-') && detailReqId && !detailReq?.contentBlocks) {
+      apiFetch(`/api/requirements/${detailReqId}`).then(r => {
+        setDetailBlocks(r.data?.contentBlocks);
+      }).catch(() => {});
+    }
+  }, [viewType, detailReqId, detailReq?.contentBlocks]);
 
   // Memoize status counts to avoid re-filtering on every render
-  const statusStats = useMemo(() => [
-    { label: `全部`, count: requirements.length, color: `var(--wiki-text)`, status: `全部` },
-    { label: `待评估`, count: requirements.filter(r => r.status === '待评估').length, color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
-    { label: `设计中`, count: requirements.filter(r => r.status === '设计中').length, color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
-    { label: `实现中`, count: requirements.filter(r => r.status === '实现中').length, color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
-    { label: `测试中`, count: requirements.filter(r => r.status === '测试中').length, color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
-    { label: `已完成`, count: requirements.filter(r => r.status === '已完成').length, color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
-  ], [requirements]);
+  const statusStats = useMemo(() => {
+    const counts: Record<string, number> = { '待评估': 0, '设计中': 0, '实现中': 0, '测试中': 0, '已完成': 0 };
+    for (const r of requirements) { if (counts[r.status] !== undefined) counts[r.status]++; }
+    return [
+      { label: `全部`, count: requirements.length, color: `var(--wiki-text)`, status: `全部` },
+      { label: `待评估`, count: counts['待评估'], color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
+      { label: `设计中`, count: counts['设计中'], color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
+      { label: `实现中`, count: counts['实现中'], color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
+      { label: `测试中`, count: counts['测试中'], color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
+      { label: `已完成`, count: counts['已完成'], color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
+    ];
+  }, [requirements]);
 
   // Open detail in parent tab
-  const openDetail = (req: Requirement) => {
+  const openDetail = useCallback((req: Requirement) => {
     onOpenSubTab?.(req.aiSummary || req.title?.substring(0, 20) || '需求详情', 'requirements-detail', { reqId: req.id });
-  };
+  }, [onOpenSubTab]);
 
   const openCreate = () => {
     onOpenSubTab?.('新建需求', 'requirements-create');
@@ -233,7 +306,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
 
     // Step 3: auto-analyze (independent of UI cleanup)
     if (newId) {
-      setTimeout(async () => {
+      autoAnalyzeRef.current = setTimeout(async () => {
         try {
           console.log('[auto-analyze] start, newId=' + newId);
           const autoEnabled = (() => { try { return localStorage.getItem('ai_auto_analyze') !== 'false'; } catch { return true; } })();
@@ -301,11 +374,11 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     finally { setAnalyzing(false); }
   };
 
-  const formatDate = (dateStr: string) => {
+  const formatDate = useCallback((dateStr: string) => {
     if (!dateStr) return '';
     try { return new Date(dateStr).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }); }
     catch { return dateStr; }
-  };
+  }, []);
 
   // ---- List View ----
   if (viewType === 'requirements' || viewType === 'requirements-list') {
@@ -369,37 +442,9 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
           ))}
         </div>
         <div className="flex flex-col gap-3 overflow-y-auto scrollbar-thin flex-1 px-8 pb-8">
-          {filteredRequirements.map((req) => {
-            const statusCfg = statusConfig[req.status] || statusConfig['待评估'];
-            const priorityCfg = priorityConfig[req.priority] || priorityConfig['中'];
-            const StatusIcon = statusCfg.icon;
-            return (
-              <div key={req.id} onClick={() => openDetail(req)} className="p-5 rounded-lg cursor-pointer transition-all duration-200"
-                style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-                <div className="flex items-start justify-between mb-2">
-                  <div className="flex items-center gap-3 flex-1">
-                    <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: statusCfg.bg }}><StatusIcon size={14} style={{ color: statusCfg.color }} /></div>
-                    <div className="flex-1">
-                      <div className="text-sm font-semibold text-wiki-text mb-0.5">{req.aiSummary || req.desc?.substring(0, 50) || req.title}</div>
-                      {req.aiSummary && <div className="text-xs text-wiki-text3 line-clamp-1">{req.title}</div>}
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 ml-4">
-                    <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: priorityCfg.bg, color: priorityCfg.color }}>{req.priority}优先级</span>
-                    <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: statusCfg.bg, color: statusCfg.color }}>{req.status}</span>
-                  </div>
-                </div>
-                <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><UserIcon size={11} /><span>{req.creator}</span></div>
-                    <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><CalendarIcon size={11} /><span>{formatDate(req.createdAt)}</span></div>
-                    <div className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md" style={{ background: `var(--wiki-surface2)`, color: `var(--wiki-text2)` }}>{req.module}</div>
-                  </div>
-                  <div className="flex items-center gap-1.5 flex-wrap">{(req.aiTags || []).map((tag) => (<span key={tag} className="text-xs px-2.5 py-1 rounded-md font-medium" style={{ background: 'rgba(99,102,241,0.15)', color: '#6366f1' }}>#{tag}</span>))}</div>
-                </div>
-              </div>
-            );
-          })}
+          {filteredRequirements.map((req) => (
+            <ReqListItem key={req.id} req={req} onOpen={openDetail} formatDate={formatDate} />
+          ))}
         </div>
       </div>
     );
@@ -460,19 +505,11 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
             </div>
             <div className="p-4 rounded-lg" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)' }}>
               <div className="text-xs text-wiki-text3 mb-2">需求描述</div>
-              {(() => {
-                const rawContentBlocks = detailReq.contentBlocks;
-                let blocks: ContentBlock[];
-                if (rawContentBlocks && rawContentBlocks.length > 0) {
-                  blocks = rawContentBlocks;
-                } else {
-                  // Legacy data: rebuild from desc + images
-                  blocks = rebuildBlocksFromLegacy(detailReq.desc || '', detailReq.images || []);
-                }
-                return (
-                  <ContentBlockRenderer blocks={blocks} />
-                );
-              })()}
+              <MemoizedContentBlocks
+                rawBlocks={detailBlocks ?? detailReq.contentBlocks}
+                desc={detailReq.desc}
+                images={detailReq.images}
+              />
             </div>
           </div>
         </div>

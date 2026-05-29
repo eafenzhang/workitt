@@ -4,12 +4,16 @@ import { ClipboardIcon, XIcon, SparklesIcon, ClipboardPasteIcon, ChevronLeftIcon
 import { toast } from 'sonner';
 import { parseChatMessages, buildSenderColorMap } from '../utils/chatParser';
 import { captureItemsToBlocks, extractTextFromBlocks, extractImagesFromBlocks } from '../utils/contentBlocks';
+import OfficePreview from './OfficePreview';
+import { DOC_EXTS, ARCHIVE_EXTS, getFileExt, getFileCategory, formatFileSize } from './FileChip';
+import { downloadFile } from '../utils/download';
 
 interface CaptureItem {
   type: 'text' | 'image' | 'video' | 'file' | 'table';
   content: string; // text content / image dataURL / video dataURL / file dataURL
   name?: string;   // file name (for 'file' type)
   size?: number;   // file size in bytes (for 'file' type)
+  path?: string;   // original file path (for 'file'/'video' type, used to open externally)
   rows?: string[][];  // 表格数据（table 类型时）
   headers?: string[]; // 表头（table 类型时可选）
 }
@@ -20,26 +24,6 @@ interface CaptureData {
 
 const modules = ['系统后台', '机构后台', '品牌门店', '收银终端', '用户端', '开放平台'];
 const priorities = ['高', '中', '低'];
-
-const VIDEO_EXTS = ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.flv', '.wmv', '.m4v'];
-const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp', '.svg', '.ico', '.tiff'];
-const ARCHIVE_EXTS = ['.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.tgz', '.z01', '.z02'];
-const DOC_EXTS = ['.doc', '.docx', '.pdf', '.xls', '.xlsx', '.ppt', '.pptx', '.csv', '.rtf', '.odt', '.ods', '.odp'];
-const CODE_EXTS = ['.html', '.htm', '.md', '.markdown', '.json', '.xml', '.yaml', '.yml', '.toml', '.ini', '.conf', '.log', '.sql', '.sh', '.bat', '.ps1', '.py', '.js', '.ts', '.css', '.less', '.scss'];
-
-function getFileExt(name: string): string {
-  const idx = name.lastIndexOf('.');
-  return idx >= 0 ? name.substring(idx).toLowerCase() : '';
-}
-
-function getFileCategory(ext: string): 'image' | 'video' | 'archive' | 'doc' | 'code' | 'file' {
-  if (IMAGE_EXTS.includes(ext)) return 'image';
-  if (VIDEO_EXTS.includes(ext)) return 'video';
-  if (ARCHIVE_EXTS.includes(ext)) return 'archive';
-  if (DOC_EXTS.includes(ext)) return 'doc';
-  if (CODE_EXTS.includes(ext)) return 'code';
-  return 'file';
-}
 
 /** Check if a string looks like a file path (Windows: C:\... or UNC: \\server\...) */
 function looksLikeFilePath(s: string): boolean {
@@ -128,22 +112,16 @@ function getFileNameFromPath(fp: string): string {
   return parts[parts.length - 1] || fp;
 }
 
-function formatFileSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B';
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
-  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
-  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
-}
-
-function FileChip({ item, onRemove }: { item: CaptureItem; onRemove: () => void }) {
+function FileChip({ item, onRemove, onPreview }: { item: CaptureItem; onRemove: () => void; onPreview?: () => void }) {
   const ext = getFileExt(item.name || '');
   const cat = getFileCategory(ext);
   const Icon = cat === 'archive' ? ArchiveIcon : cat === 'doc' ? FileTextIcon : cat === 'code' ? CodeIcon : FileIcon;
   const colors: Record<string, string> = { archive: '#f59e0b', doc: '#6366f1', code: '#10b981', file: '#8b5cf6' };
   const color = colors[cat] || colors.file;
+  const canPreview = !!item.content && (item.content.startsWith('data:') || item.content.startsWith('http'));
 
   return (
-    <div className="relative group inline-flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)', maxWidth: '280px' }}>
+    <div className="relative group inline-flex items-center gap-2 px-3 py-2 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)', maxWidth: '280px', cursor: canPreview ? 'pointer' : 'default' }} onClick={canPreview && onPreview ? onPreview : undefined}>
       <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ background: color + '20' }}>
         <Icon size={16} style={{ color }} />
       </div>
@@ -151,7 +129,7 @@ function FileChip({ item, onRemove }: { item: CaptureItem; onRemove: () => void 
         <div className="text-xs font-medium text-wiki-text truncate">{item.name || '未知文件'}</div>
         {item.size != null && <div className="text-[10px] text-wiki-text3">{formatFileSize(item.size)}</div>}
       </div>
-      <button onClick={onRemove} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+      <button onClick={(e) => { e.stopPropagation(); onRemove(); }} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
     </div>
   );
 }
@@ -164,7 +142,11 @@ export default function QuickCapture() {
   const [priority, setPriority] = useState('中');
   const [enabled, setEnabled] = useState(false);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
+  const [previewItem, setPreviewItem] = useState<CaptureItem | null>(null);
   const mountedRef = useRef(true);
+  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => () => { if (autoAnalyzeRef.current) clearTimeout(autoAnalyzeRef.current); }, []);
 
   const allImages = useMemo(() => captured?.items.filter(i => i.type === 'image').map(i => i.content || '') || [], [captured]);
   const capturedText = useMemo(() => captured?.items.filter(i => i.type === 'text').map(i => i.content).join('\n') || '', [captured]);
@@ -177,15 +159,15 @@ export default function QuickCapture() {
   const nextImage = useCallback(() => setPreviewIndex(i => i !== null && i < allImages.length - 1 ? i + 1 : i), [allImages.length]);
 
   useEffect(() => {
-    if (previewIndex === null) return;
+    if (previewIndex === null && !previewItem) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closePreview();
+      if (e.key === 'Escape') { closePreview(); setPreviewItem(null); }
       else if (e.key === 'ArrowLeft') prevImage();
       else if (e.key === 'ArrowRight') nextImage();
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [previewIndex, closePreview, prevImage, nextImage]);
+  }, [previewIndex, previewItem, closePreview, prevImage, nextImage]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -208,13 +190,10 @@ export default function QuickCapture() {
     const ext = getFileExt(name);
     const cat = getFileCategory(ext);
 
-    console.log('[resolveFile] src:', src.substring(0, 80), '→ fp:', fp, 'name:', name, 'ext:', ext, 'cat:', cat, 'hasAPI:', !!api, 'hasReadLocalFile:', !!api?.readLocalFile);
 
     if (cat === 'image' || cat === 'video') {
       if (api?.readLocalFile) {
-        console.log('[resolveFile] calling readLocalFile for:', fp);
         const dataUrl = await api.readLocalFile(fp);
-        console.log('[resolveFile] readLocalFile result:', dataUrl ? `dataURL(${dataUrl.length} chars)` : 'null');
         if (dataUrl) return { type: cat, content: dataUrl };
       }
       return null;
@@ -223,14 +202,14 @@ export default function QuickCapture() {
     let dataUrl: string | null = null;
     if (api?.readLocalFile) {
       dataUrl = await api.readLocalFile(fp);
-      console.log('[resolveFile] readLocalFile result:', dataUrl ? `dataURL(${dataUrl.length} chars)` : 'null');
     }
     return { type: 'file', content: dataUrl || fp, name, size: undefined };
   }, []);
 
   // Parse HTML into ordered CaptureItem[]
   // Strategy: use plainText as primary content source, HTML only for media extraction
-  const parseHtmlToItems = useCallback(async (html: string, plainText: string, api: any): Promise<CaptureItem[]> => {
+  // clipboardFiles: pre-resolved file data from readClipboardFiles IPC (to replace placeholders)
+  const parseHtmlToItems = useCallback(async (html: string, plainText: string, api: any, clipboardFiles?: any[]): Promise<CaptureItem[]> => {
     // 1. Clean HTML: normalize &nbsp; and <br> for consistent processing
     const cleanedHtml = html
       .replace(/&nbsp;/gi, ' ')
@@ -252,36 +231,35 @@ export default function QuickCapture() {
     while ((m = linkRx.exec(cleanedHtml)) !== null) {
       if (m[1]) mediaUrls.push(m[1]);
     }
-    console.log('[parseHtml] cleanedHtml length:', cleanedHtml.length, 'mediaUrls:', mediaUrls.length, mediaUrls);
-    console.log('[parseHtml] cleanedHtml preview:', cleanedHtml.substring(0, 500));
-    console.log('[parseHtml] plainText preview:', plainText?.substring(0, 300));
-    console.log('[parseHtml] api exists:', !!api, 'readLocalFile exists:', !!api?.readLocalFile);
 
     // 3. Resolve media URLs to CaptureItems
     const resolvedMedia: CaptureItem[] = [];
     for (const url of mediaUrls) {
-      console.log('[parseHtml] processing url:', url.substring(0, 80), 'startsWith file://', url.startsWith('file://'));
       if (url.startsWith('data:')) {
         resolvedMedia.push({ type: 'image', content: url });
       } else if (url.startsWith('http://') || url.startsWith('https://')) {
         resolvedMedia.push({ type: 'image', content: url });
       } else if (url.startsWith('file://') && api?.readLocalFile) {
-        console.log('[parseHtml] calling resolveFileItem for:', url.substring(0, 80));
         const item = await resolveFileItem(url, api);
-        console.log('[parseHtml] resolveFileItem result:', item ? item.type + '(' + (item.content?.length || 0) + ' chars)' : 'null');
         if (item) resolvedMedia.push(item);
       } else {
-        console.log('[parseHtml] SKIPPED url (no matching branch):', url.substring(0, 80));
       }
     }
-    console.log('[parseHtml] resolvedMedia count:', resolvedMedia.length);
 
     // 4. Build items: use plainText unless HTML contains table/video structures
     // (plainText flattens tables & can't represent video; HTML-only walk() handles both)
+    // Pre-index clipboardFiles by type for in-place replacement
+    const cfVideos = (clipboardFiles || []).filter((f: any) => f.type === 'video');
+    const cfFiles = (clipboardFiles || []).filter((f: any) => f.type === 'file');
+    let cfVideoIdx = 0;
+    let cfFileIdx = 0;
+
     const hasTableOrVideo = /<table\b|<video\b/i.test(cleanedHtml);
     if (plainText && !hasTableOrVideo) {
       const lines = plainText.split('\n');
       let mediaIdx = 0;
+      // Track if any text markers were actually consumed
+      let markersConsumed = false;
       const items: CaptureItem[] = [];
       // Regex for [文件:filename] or [文件：filename] (half-width or full-width colon)
       const fileMarkerRx = /^\[文件[：:](.+?)\]$/;
@@ -290,36 +268,52 @@ export default function QuickCapture() {
         const trimmed = line.trim();
         if (!trimmed) continue;
 
-        // Check for [文件:filename] marker
+        // Check for [文件:filename] marker — use clipboardFiles data if available
         const fileMatch = trimmed.match(fileMarkerRx);
         if (fileMatch) {
           const fileName = fileMatch[1].trim();
-          items.push({ type: 'file', content: '', name: fileName, size: undefined });
+          if (cfFileIdx < cfFiles.length) {
+            const cf = cfFiles[cfFileIdx++];
+            items.push({ type: 'file', content: cf.dataUrl || cf.content || cf.path || '', name: cf.name || fileName, size: cf.size, path: cf.path });
+          } else {
+            items.push({ type: 'file', content: '', name: fileName, size: undefined });
+          }
           continue;
         }
 
-        // Replace [图片] / [视频] markers with resolved media from HTML
+        // Replace [图片] / [视频] markers with resolved media from HTML or clipboardFiles
         if (trimmed === '[图片]' || trimmed === '[视频]') {
           const markerType = trimmed === '[图片]' ? 'image' : 'video';
-          if (mediaIdx < resolvedMedia.length) {
+          if (markerType === 'video' && cfVideoIdx < cfVideos.length) {
+            // Use pre-resolved video data from clipboardFiles IPC
+            const vf = cfVideos[cfVideoIdx++];
+            items.push({ type: 'video', content: vf.dataUrl || vf.content, name: vf.name, size: vf.size, path: vf.path });
+            mediaIdx++; markersConsumed = true;
+          } else if (mediaIdx < resolvedMedia.length) {
             items.push(resolvedMedia[mediaIdx]);
+            mediaIdx++; markersConsumed = true;
           } else {
             // No actual media data — create placeholder item
             items.push({ type: markerType, content: '' });
+            mediaIdx++;
           }
-          mediaIdx++;
         } else if (trimmed.includes('[图片]') || trimmed.includes('[视频]')) {
           // Line contains mixed text and media markers
           const parts = trimmed.split(/(\[图片\]|\[视频\])/);
           for (const part of parts) {
             if (part === '[图片]' || part === '[视频]') {
               const markerType = part === '[图片]' ? 'image' : 'video';
-              if (mediaIdx < resolvedMedia.length) {
-                items.push(resolvedMedia[mediaIdx]);
-              } else {
-                items.push({ type: markerType, content: '' });
-              }
-              mediaIdx++;
+          if (markerType === 'video' && cfVideoIdx < cfVideos.length) {
+            const vf = cfVideos[cfVideoIdx++];
+            items.push({ type: 'video', content: vf.dataUrl || vf.content, name: vf.name, size: vf.size, path: vf.path });
+            mediaIdx++; markersConsumed = true;
+          } else if (mediaIdx < resolvedMedia.length) {
+            items.push(resolvedMedia[mediaIdx]);
+            mediaIdx++; markersConsumed = true;
+          } else {
+            items.push({ type: markerType, content: '' });
+            mediaIdx++;
+          }
             } else if (part.trim()) {
               items.push({ type: 'text', content: part });
             }
@@ -329,13 +323,23 @@ export default function QuickCapture() {
         }
       }
 
-      // Append any remaining media not matched by markers
-      while (mediaIdx < resolvedMedia.length) {
-        items.push(resolvedMedia[mediaIdx]);
-        mediaIdx++;
+      // Only append remaining resolvedMedia if text markers were consumed (avoids web-page images at bottom)
+      if (markersConsumed) {
+        while (mediaIdx < resolvedMedia.length) {
+          items.push(resolvedMedia[mediaIdx]);
+          mediaIdx++;
+        }
+      }
+      // Clipboard files from IPC always append (they're from WXWork/WeChat, not web)
+      while (cfVideoIdx < cfVideos.length) {
+        const vf = cfVideos[cfVideoIdx++];
+        items.push({ type: 'video', content: vf.dataUrl || vf.content, name: vf.name, size: vf.size, path: vf.path });
+      }
+      while (cfFileIdx < cfFiles.length) {
+        const cf = cfFiles[cfFileIdx++];
+        items.push({ type: 'file', content: cf.dataUrl || cf.content || cf.path || '', name: cf.name, size: cf.size, path: cf.path });
       }
 
-      console.log('[parseHtmlToItems] text-based:', items.length, 'items,', resolvedMedia.length, 'media from HTML');
       return items;
     }
 
@@ -355,6 +359,16 @@ export default function QuickCapture() {
         const el = node as HTMLElement;
         const tag = el.tagName.toLowerCase();
         if (SKIP_TAGS.includes(tag)) return;
+        if (tag === 'a') {
+          const href = el.getAttribute('href');
+          const text = (el.textContent || '').trim();
+          if (href && /^https?:\/\//.test(href)) {
+            items.push({ type: 'text', content: text + '\n' + href });
+          } else if (text) {
+            items.push({ type: 'text', content: text });
+          }
+          return;
+        }
         if (tag === 'img') {
           const src = el.getAttribute('src');
           if (src && src.startsWith('file://') && api?.readLocalFile) {
@@ -419,7 +433,6 @@ export default function QuickCapture() {
     }
 
     const cleaned = merged.filter(item => item.type !== 'text' || item.content.trim());
-    console.log('[parseHtmlToItems] html-only:', cleaned.length, 'items');
     return cleaned;
   }, [resolveFileItem]);
 
@@ -430,24 +443,13 @@ export default function QuickCapture() {
       if (!dt) return;
       const api = (window as any).electronAPI;
 
-      // Diagnostic: dump ALL clipboard formats
-      console.log('[qc-diag] dt.types:', Array.from(dt.types));
-      if (dt.items) {
-        for (const item of Array.from(dt.items)) {
-          console.log('[qc-diag] dt.item:', item.kind, item.type);
-        }
-      }
-      // Also check raw clipboard via electronAPI
-      if (api?.readClipboardFiles) {
-        try {
-          const rawFiles = await api.readClipboardFiles();
-          console.log('[qc-diag] readClipboardFiles result:', JSON.stringify(rawFiles));
-        } catch(e) { console.log('[qc-diag] readClipboardFiles error:', e); }
-      }
-
       let text = '', html = '';
       try { text = dt.getData('text/plain') || ''; } catch {}
       try { html = dt.getData('text/html') || ''; } catch {}
+      
+      // Diagnostic: log what browser event gives us
+      const dtTypes = dt.types ? Array.from(dt.types) : [];
+      console.log('[qc-diag] browser paste — dt.types:', dtTypes, '| text-len:', text.length, '| html-len:', html.length);
 
       // Fallback: use Electron IPC for text/HTML if browser paste has none
       // (WeCom uses custom clipboard formats that browser ClipboardEvent can't read)
@@ -482,16 +484,99 @@ export default function QuickCapture() {
 
       let newItems: CaptureItem[] = [];
 
-      console.log('[qc-paste] text:', text.substring(0, 100), '| html:', html ? html.substring(0, 200) : '(empty)', '| blobs:', rawBlobs.length);
+
+      // Handle Files-type clipboard (WeChat/WeCom video/file paste: dt.types=['Files'])
+      // Browser provides file references directly — no need for backend IPC
+      const pasteFiles: CaptureItem[] = [];
+      console.log('[qc-diag] dt.files:', dt.files ? dt.files.length : 'null', 'dt.types:', dtTypes);
+      if (dt.files && dt.files.length > 0) {
+        for (const f of Array.from(dt.files)) {
+          const name = f.name || '文件';
+          const ext = getFileExt(name);
+          const cat = getFileCategory(ext);
+          if (cat === 'video') {
+            // Read video file as data URL for preview
+            const dataUrl = await new Promise<string>(resolve => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result as string);
+              r.onerror = () => resolve('');
+              r.readAsDataURL(f);
+            });
+            pasteFiles.push({ type: 'video', content: dataUrl, name, size: f.size });
+          } else if (cat === 'image') {
+            const dataUrl = await new Promise<string>(resolve => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result as string);
+              r.onerror = () => resolve('');
+              r.readAsDataURL(f);
+            });
+            pasteFiles.push({ type: 'image', content: dataUrl, name, size: f.size });
+          } else {
+            const dataUrl = await new Promise<string>(resolve => {
+              const r = new FileReader();
+              r.onload = () => resolve(r.result as string);
+              r.onerror = () => resolve('');
+              r.readAsDataURL(f);
+            });
+            pasteFiles.push({ type: 'file', content: dataUrl, name, size: f.size });
+          }
+        }
+        console.log('[qc-diag] pasteFiles from dt.files:', pasteFiles.length, pasteFiles.map(p => p.type + ':' + (p.name || '?')));
+      }
+
+      // Pre-read clipboardFiles for in-place placeholder replacement
+      let clipboardFilesData: any[] = [];
+      if (api?.readClipboardFiles) {
+        try {
+          const cfResult = await api.readClipboardFiles();
+          if (Array.isArray(cfResult)) clipboardFilesData = cfResult;
+        } catch {}
+      }
+
+      // Fallback: navigator.clipboard.read() — works for Files-type paste (WeChat video)
+      // Run when we have no usable media data from other sources
+      const hasUsableMedia = clipboardFilesData.some((f: any) => f.dataUrl) || rawBlobs.length > 0;
+      if (!hasUsableMedia && navigator.clipboard?.read) {
+        try {
+          const items = await navigator.clipboard.read();
+          for (const item of items) {
+            for (const type of item.types) {
+              if (type.startsWith('video/')) {
+                const blob = await item.getType(type);
+                const dataUrl = await blobToDataUrl(blob);
+                if (dataUrl) {
+                  rawBlobs.push({ type: 'video', blob });
+                  console.log('[qc-diag] clipboard.read video:', type, 'size:', blob.size);
+                }
+              } else if (type.startsWith('image/')) {
+                const blob = await item.getType(type);
+                rawBlobs.push({ type: 'image', blob });
+              }
+            }
+          }
+        } catch {}
+      }
 
       if (html) {
-        newItems = await parseHtmlToItems(html, text, api);
-        console.log('[qc-paste] parseHtmlToItems result:', newItems.length, newItems.map(i => ({ type: i.type, contentLen: i.content?.length, name: i.name })));
+        newItems = await parseHtmlToItems(html, text, api, clipboardFilesData);
+      }
+
+      // Directly use clipboardFilesData when no text/html (Files-type paste: WeChat video)
+      if (newItems.length === 0 && clipboardFilesData.length > 0) {
+        for (const cf of clipboardFilesData) {
+          if (cf.type === 'video' && cf.dataUrl) {
+            newItems.push({ type: 'video', content: cf.dataUrl, name: cf.name, size: cf.size, path: cf.path });
+          } else if (cf.type === 'image' && cf.dataUrl) {
+            newItems.push({ type: 'image', content: cf.dataUrl, name: cf.name, size: cf.size });
+          } else if (cf.type === 'file') {
+            newItems.push({ type: 'file', content: cf.dataUrl || cf.path || '', name: cf.name, size: cf.size, path: cf.path });
+          }
+        }
+        console.log('[qc-diag] created items from clipboardFilesData:', newItems.length);
       }
 
       if (newItems.length === 0 && text) {
         const fileItems = await resolveTextFileItems(text, api);
-        console.log('[qc-paste] resolveTextFileItems result:', fileItems ? fileItems.length : 'null');
         if (fileItems) {
           newItems = fileItems;
         } else {
@@ -499,27 +584,27 @@ export default function QuickCapture() {
         }
       }
 
-      // Fallback: check native clipboard files for videos that HTML didn't capture
-      const emptyVideos = newItems.filter(i => i.type === 'video' && !i.content);
-      if (emptyVideos.length > 0 && api?.readClipboardFiles) {
+      // Merge Files-type paste items (from dt.files, e.g. WeChat video)
+      if (pasteFiles.length > 0) {
+        newItems = [...newItems, ...pasteFiles];
+      }
+
+      // Fallback: check native clipboard files for videos/files that HTML didn't capture
+      // Replace empty placeholders IN-PLACE instead of appending
+      const emptyMediaItems = newItems.filter(i => (i.type === 'video' || i.type === 'file') && !i.content);
+      if (emptyMediaItems.length > 0 && clipboardFilesData.length > 0) {
         try {
-          const files = await api.readClipboardFiles();
-          if (Array.isArray(files)) {
-            const VIDEO_EXTS_FALLBACK = ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.flv', '.wmv', '.m4v'];
-            const videoPaths = files.filter((f: string) => {
-              const ext = f.substring(f.lastIndexOf('.')).toLowerCase();
-              return VIDEO_EXTS_FALLBACK.includes(ext);
-            });
-            // Replace empty video items with resolved ones
-            let vidIdx = 0;
-            newItems = newItems.map(item => {
-              if (item.type === 'video' && !item.content && vidIdx < videoPaths.length) {
-                return resolveFileItem(videoPaths[vidIdx++], api).then(r => r || item);
-              }
-              return Promise.resolve(item);
-            });
-            newItems = await Promise.all(newItems);
-          }
+          const mediaFiles = clipboardFilesData.filter((f: any) =>
+            typeof f === 'object' && (f.type === 'video' || f.type === 'file') && f.dataUrl
+          );
+          let vidIdx = 0;
+          newItems = newItems.map(item => {
+            if ((item.type === 'video' || item.type === 'file') && !item.content && vidIdx < mediaFiles.length) {
+              const vf = mediaFiles[vidIdx++];
+              return { type: vf.type, content: vf.dataUrl || vf.content, name: vf.name, size: vf.size, path: vf.path };
+            }
+            return item;
+          });
         } catch {}
       }
 
@@ -528,8 +613,9 @@ export default function QuickCapture() {
         if (dataUrl) newItems.push({ type: rb.type, content: dataUrl });
       }
 
-      console.log('[qc-paste] final items:', newItems.length, newItems.map(i => ({ type: i.type, contentLen: i.content?.length, name: i.name })));
-      if (newItems.length === 0) return;
+      console.log('[qc-diag] final items:', newItems.length, 'types:', newItems.map(i => i.type + (i.name ? ':' + i.name : '')).join(', '));
+
+      if (newItems.length === 0) { console.log('[qc-diag] no items, abort'); return; }
 
       if (!mountedRef.current) return;
       setCaptured(prev => ({
@@ -558,36 +644,51 @@ export default function QuickCapture() {
         } catch {}
       }
 
-      // 2. Read file references from clipboard
+      // 2. Read file references from clipboard (now returns structured objects with dataUrl)
       if (api?.readClipboardFiles) {
         try {
           const files = await api.readClipboardFiles();
           if (Array.isArray(files)) {
-            for (const fp of files) {
-              if (!fp) continue;
-              // Already captured as data URL by readClipboardImages
-              if (fp.startsWith('data:') || fp.startsWith('http')) {
-                // Check if already in images array
-                if (!images.includes(fp)) images.push(fp);
+            for (const f of files) {
+              if (!f) continue;
+              // New format: { path, name, type, dataUrl, size }
+              if (typeof f === 'object' && f.type) {
+                if (f.dataUrl) {
+                  // Has data — directly add as CaptureItem
+                  if (f.type === 'video') {
+                    fileItems.push({ type: 'video', content: f.dataUrl, name: f.name, size: f.size, path: f.path });
+                  } else if (f.type === 'image') {
+                    if (!images.includes(f.dataUrl)) images.push(f.dataUrl);
+                  } else {
+                    fileItems.push({ type: 'file', content: f.dataUrl, name: f.name, size: f.size, path: f.path });
+                  }
+                } else if (f.path) {
+                  // Has path but no dataUrl — resolve via readLocalFile
+                  const item = await resolveFileItem(f.path, api);
+                  if (item) { item.path = f.path; fileItems.push(item); }
+                } else {
+                  // No data, no path — placeholder
+                  if (f.type === 'video') {
+                    fileItems.push({ type: 'video', content: '', name: f.name || '视频' });
+                  } else if (f.type === 'file') {
+                    fileItems.push({ type: 'file', content: '', name: f.name || '文件' });
+                  }
+                }
                 continue;
               }
-              // Raw file path: resolve to CaptureItem
-              const name = getFileNameFromPath(fp);
-              const ext = getFileExt(name);
-              const cat = getFileCategory(ext);
-              if (cat === 'image') {
-                // Already handled by readClipboardImages (converted to data URL)
-                continue;
-              }
-              if (cat === 'video') {
-                // readClipboardImages doesn't handle video — resolve this file
-                const item = await resolveFileItem(fp, api);
+              // Legacy format: string path
+              if (typeof f === 'string') {
+                if (f.startsWith('data:') || f.startsWith('http')) {
+                  if (!images.includes(f)) images.push(f);
+                  continue;
+                }
+                const name = getFileNameFromPath(f);
+                const ext = getFileExt(name);
+                const cat = getFileCategory(ext);
+                if (cat === 'image') continue;
+                const item = await resolveFileItem(f, api);
                 if (item) fileItems.push(item);
-                continue;
               }
-              // Document / archive / code file
-              const item = await resolveFileItem(fp, api);
-              if (item) fileItems.push(item);
             }
           }
         } catch {}
@@ -598,12 +699,12 @@ export default function QuickCapture() {
         try { text = await api.readClipboardText() || ''; } catch {}
       }
 
-      // 4. Read HTML for ordered content
+      // 4. Read HTML for ordered content (pass clipboardFiles for in-place placeholder replacement)
       let htmlItems: CaptureItem[] = [];
       if (api?.readClipboardHTML) {
         try {
           const html = await api.readClipboardHTML();
-          if (html) htmlItems = await parseHtmlToItems(html, text, api);
+          if (html) htmlItems = await parseHtmlToItems(html, text, api, fileItems);
         } catch {}
       }
 
@@ -650,15 +751,35 @@ export default function QuickCapture() {
         return;
       }
 
-      // Build final items
+      // Build final items: merge fileItems into htmlItems placeholders IN-PLACE
       let finalItems: CaptureItem[];
       if (htmlItems.length > 0) {
-        finalItems = htmlItems;
-        const htmlImageCount = htmlItems.filter(i => i.type === 'image').length;
+        // Replace empty placeholders in htmlItems with real data from readClipboardFiles
+        let fileItemIdx = 0;
+        finalItems = htmlItems.map(item => {
+          if (item.type === 'video' && !item.content && fileItemIdx < fileItems.length && fileItems[fileItemIdx].type === 'video') {
+            return fileItems[fileItemIdx++];
+          }
+          if (item.type === 'file' && !item.content && fileItemIdx < fileItems.length && fileItems[fileItemIdx].type === 'file') {
+            return fileItems[fileItemIdx++];
+          }
+          if (item.type === 'video' && !item.content && fileItemIdx < fileItems.length) {
+            return fileItems[fileItemIdx++];
+          }
+          if (item.type === 'file' && !item.content && fileItemIdx < fileItems.length) {
+            return fileItems[fileItemIdx++];
+          }
+          return item;
+        });
+        // Append any remaining images not covered by HTML
+        const htmlImageCount = finalItems.filter(i => i.type === 'image').length;
         for (let i = htmlImageCount; i < images.length; i++) {
           finalItems.push({ type: 'image', content: images[i] });
         }
-        finalItems.push(...fileItems);
+        // Append any remaining fileItems not consumed by placeholder replacement
+        while (fileItemIdx < fileItems.length) {
+          finalItems.push(fileItems[fileItemIdx++]);
+        }
       } else {
         finalItems = [];
         // Check if text contains file paths (e.g. from file explorer copy)
@@ -722,6 +843,13 @@ export default function QuickCapture() {
     setCaptured(prev => prev ? { items: prev.items.filter((_, i) => i !== idx) } : null);
   };
 
+  const handleDownload = useCallback((item: CaptureItem) => {
+    if (!item.content) return;
+    // If local file path, open with system
+    if (item.path) { (window as any).electronAPI?.openPathExternal?.(item.path); return; }
+    downloadFile(item.content, item.name || 'download' + getFileExt(item.name || ''));
+  }, []);
+
   const refreshMainList = () => {
     window.dispatchEvent(new CustomEvent('requirements-changed'));
     (window as any).electronAPI?.notifyRequirementsChanged?.();
@@ -769,7 +897,6 @@ export default function QuickCapture() {
         body: JSON.stringify({ title, desc: fullDesc, module, priority, images: compatImages, content_blocks: contentBlocksStr }),
       });
       const result = res.data;
-      console.log('[qc-submit] POST result:', JSON.stringify(result).substring(0, 200));
       const extractedId = result?.id;
       if (!extractedId) { toast.error('采集失败 (id=' + extractedId + ')'); return; }
       newId = extractedId;
@@ -778,9 +905,8 @@ export default function QuickCapture() {
     try { setShowModal(false); setCaptured(null); setDesc(''); toast.success('需求采集成功'); refreshMainList(); } catch {}
 
     if (newId) {
-      setTimeout(async () => {
+      autoAnalyzeRef.current = setTimeout(async () => {
         try {
-          console.log('[qc-auto-analyze] start, newId=' + newId);
           const autoEnabled = (() => { try { return localStorage.getItem('ai_auto_analyze') === 'true'; } catch { return false; } })();
           if (!autoEnabled) return;
           const modelsRes = await apiFetch('/api/models');
@@ -852,14 +978,25 @@ export default function QuickCapture() {
                                 const img = allImages[Math.min(imgIdx, allImages.length - 1)];
                                 return img ? <img key={j} src={img} className="w-12 h-12 rounded object-cover my-1 cursor-pointer hover:opacity-80" onClick={() => openPreview(Math.min(imgIdx, allImages.length - 1))} /> : <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}><ClipboardIcon size={10} /> 图片</div>;
                               }
-                              // [视频] marker
+                              // [视频] marker — click to preview if we have data
                               if (trimmedLine === '[视频]') {
+                                // Find matching video item from captured items
+                                const videoItemIdx = captured.items.findIndex(it => it.type === 'video' && it.content);
+                                if (videoItemIdx >= 0) {
+                                  const vi = captured.items[videoItemIdx];
+                                  return <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px] cursor-pointer hover:opacity-80 transition-opacity" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text2)', border: '1px solid var(--wiki-border)' }} onClick={() => setPreviewItem(vi)}>🎥 视频</div>;
+                                }
                                 return <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}>🎥 视频</div>;
                               }
-                              // [文件:filename] marker
+                              // [文件:filename] marker — click to preview if we have data
                               const fileMatch = trimmedLine.match(/^\[文件[：:](.+?)\]$/);
                               if (fileMatch) {
-                                return <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}><FileIcon size={10} /> {fileMatch[1].trim()}</div>;
+                                const fileName = fileMatch[1].trim();
+                                const fileItem = captured.items.find(it => it.type === 'file' && it.name === fileName && it.content);
+                                if (fileItem) {
+                                  return <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px] cursor-pointer hover:opacity-80 transition-opacity" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text2)', border: '1px solid var(--wiki-border)' }} onClick={() => setPreviewItem(fileItem)}><FileIcon size={10} /> {fileName}</div>;
+                                }
+                                return <div key={j} className="inline-flex items-center gap-1 px-2 py-1 my-0.5 rounded text-[10px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}><FileIcon size={10} /> {fileName}</div>;
                               }
                               return <div key={j}>{line || ' '}</div>;
                             })}
@@ -876,7 +1013,7 @@ export default function QuickCapture() {
                       }
                       if (item.type === 'image') {
                         if (!item.content) {
-                          // Placeholder for WeChat image without data
+                          // Placeholder for image without data
                           return (
                             <div key={i} className="relative group inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}>
                               <ClipboardIcon size={12} /> 图片
@@ -894,7 +1031,7 @@ export default function QuickCapture() {
                       }
                       if (item.type === 'video') {
                         if (!item.content) {
-                          // Placeholder for WeChat video without data
+                          // Placeholder for video without data
                           return (
                             <div key={i} className="relative group inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded text-[11px]" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}>
                               🎥 视频
@@ -902,15 +1039,22 @@ export default function QuickCapture() {
                             </div>
                           );
                         }
+                        // Video thumbnail with click-to-preview
                         return (
-                          <div key={i} className="relative group">
-                            <video src={item.content} controls className="w-full max-w-sm rounded" style={{ border: '1px solid var(--wiki-border)' }} />
-                            <button onClick={() => removeItem(i)} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                          <div key={i} className="relative group inline-flex items-center gap-2 px-3 py-2 rounded-lg cursor-pointer hover:opacity-80 transition-opacity" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} onClick={() => setPreviewItem(item)}>
+                            <div className="w-8 h-8 rounded flex items-center justify-center flex-shrink-0" style={{ background: '#6366f120' }}>
+                              <span style={{ fontSize: '16px' }}>🎥</span>
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-xs font-medium text-wiki-text truncate">{item.name || '视频'}</div>
+                              {item.size != null && <div className="text-[10px] text-wiki-text3">{formatFileSize(item.size)}</div>}
+                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); removeItem(i); }} className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white flex items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                           </div>
                         );
                       }
                       if (item.type === 'file') {
-                        return <FileChip key={i} item={item} onRemove={() => removeItem(i)} />;
+                        return <FileChip key={i} item={item} onRemove={() => removeItem(i)} onPreview={() => setPreviewItem(item)} />;
                       }
                       if (item.type === 'table') {
                         return (
@@ -1017,6 +1161,92 @@ export default function QuickCapture() {
             </button>
           )}
           <img src={allImages[previewIndex]} className="max-w-[85vw] max-h-[85vh] rounded-md object-contain" onClick={e => e.stopPropagation()} />
+        </div>
+      )}
+
+      {/* Video / File preview modal — fullscreen */}
+      {previewItem && (
+        <div className="fixed inset-0 z-[60] flex flex-col" style={{ background: '#1a1a2e' }}>
+          {/* Top bar */}
+          <div className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ background: 'rgba(0,0,0,0.4)' }}>
+            <div className="text-white/80 text-sm truncate max-w-[70%]">{previewItem.name || (previewItem.type === 'video' ? '视频' : '文件')}</div>
+            <div className="flex items-center gap-3">
+              {/* Download button */}
+              {previewItem.content && (
+                <button
+                  onClick={() => handleDownload(previewItem)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                  title="下载文件"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  下载
+                </button>
+              )}
+              <button onClick={() => setPreviewItem(null)} className="text-white/60 hover:text-white text-2xl leading-none">×</button>
+            </div>
+          </div>
+          {/* Content */}
+          <div className="flex-1 flex items-center justify-center overflow-hidden" onClick={e => e.stopPropagation()}>
+            {previewItem.type === 'video' && previewItem.content && (
+              <video src={previewItem.content} controls autoPlay className="max-w-full max-h-full rounded" style={{ background: '#000' }} />
+            )}
+            {previewItem.type === 'file' && previewItem.content && previewItem.content.startsWith('data:') && (
+              <div className="w-full h-full overflow-hidden" style={{ background: '#fff' }}>
+                {(() => {
+                  const ext = getFileExt(previewItem.name || '');
+                  const mime = previewItem.content.match(/^data:([^;]+)/)?.[1] || '';
+                  // PDF
+                  if (mime === 'application/pdf' || ext === '.pdf') {
+                    return <iframe src={previewItem.content} className="w-full h-full border-0" title="PDF Preview" />;
+                  }
+                  // Image files rendered as file type
+                  if (mime.startsWith('image/')) {
+                    return <img src={previewItem.content} className="max-w-full max-h-full object-contain mx-auto" alt="Preview" />;
+                  }
+                  // Text-based files (code, txt, etc. — csv handled by OfficePreview)
+                  if (mime.startsWith('text/') || ['.json', '.xml', '.yaml', '.yml', '.md', '.txt', '.log', '.sql', '.sh', '.bat', '.ps1', '.py', '.js', '.ts', '.css', '.html', '.htm'].includes(ext)) {
+                    try {
+                      const base64 = previewItem.content.split(',')[1];
+                      const text = decodeURIComponent(escape(atob(base64)));
+                      return <pre className="w-full h-full overflow-auto p-6 text-sm font-mono whitespace-pre-wrap" style={{ color: '#1a1a1a' }}>{text}</pre>;
+                    } catch {
+                      return <div className="flex items-center justify-center h-full text-gray-500">无法预览此文件</div>;
+                    }
+                  }
+                  // Office documents — render with JS libraries
+                  if (DOC_EXTS.includes(ext)) {
+                    return <OfficePreview dataUrl={previewItem.content} fileName={previewItem.name} />;
+                  }
+                  // Archives — show icon + download prompt
+                  if (ARCHIVE_EXTS.includes(ext)) {
+                    return (
+                      <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
+                        <ArchiveIcon size={64} />
+                        <div className="text-lg">{previewItem.name || '压缩包'}</div>
+                        <div className="text-sm text-gray-400">{previewItem.size != null ? formatFileSize(previewItem.size) : ''}</div>
+                        <button onClick={() => handleDownload(previewItem)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm hover:opacity-90 transition-opacity" style={{ background: '#6366f1' }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                          下载文件
+                        </button>
+                      </div>
+                    );
+                  }
+                  // Unknown — fallback with download
+                  return (
+                    <div className="flex flex-col items-center justify-center h-full gap-4 text-gray-500">
+                      <FileIcon size={64} />
+                      <div className="text-lg">{previewItem.name || '文件'}</div>
+                      <div className="text-sm text-gray-400">{previewItem.size != null ? formatFileSize(previewItem.size) : ''}</div>
+                      <button onClick={() => handleDownload(previewItem)} className="flex items-center gap-2 px-5 py-2.5 rounded-lg text-white text-sm hover:opacity-90 transition-opacity" style={{ background: '#6366f1' }}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        下载文件
+                      </button>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </>

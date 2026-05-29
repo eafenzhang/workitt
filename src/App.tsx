@@ -1,13 +1,14 @@
 import { MemoryRouter } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import Index from './pages/Index';
-import QuickCapture from './components/QuickCapture';
 import { AuthProvider } from './context/AuthContext';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+
+const QuickCapture = lazy(() => import('./components/QuickCapture'));
 
 const App = () => {
   const isQCPopup = !!(window as any).electronAPI?.__isQCPopup;
-  if (isQCPopup) return <QuickCapture />;
+  if (isQCPopup) return <Suspense fallback={null}><QuickCapture /></Suspense>;
 
   const [qcEnabled, setQcEnabled] = useState(false);
   useEffect(() => {
@@ -17,11 +18,28 @@ const App = () => {
     return () => window.removeEventListener('quick-collect-toggle', h);
   }, []);
 
+  // Global link interception: open external URLs in built-in browser tab
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      const anchor = target.closest('a');
+      if (!anchor) return;
+      const href = anchor.getAttribute('href');
+      if (href && /^https?:\/\//.test(href)) {
+        e.preventDefault();
+        e.stopPropagation();
+        window.dispatchEvent(new CustomEvent('open-browser-tab', { detail: { url: href } }));
+      }
+    };
+    document.addEventListener('click', handler, true);
+    return () => document.removeEventListener('click', handler, true);
+  }, []);
+
   return (
     <AuthProvider>
       <MemoryRouter>
         <Index />
-        {qcEnabled && <QuickCapture />}
+        {qcEnabled && <Suspense fallback={null}><QuickCapture /></Suspense>}
         <Toaster position="top-right" />
       </MemoryRouter>
     </AuthProvider>

@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon } from 'lucide-react';
+import { PanelLeftCloseIcon, PanelLeftOpenIcon, GlobeIcon } from 'lucide-react';
 
 function getAPI() {
   return (window as any).electronAPI;
@@ -50,6 +50,14 @@ export default function TitleBar({ children, sidebarCollapsed = false, onToggleS
 
       {/* Window controls */}
       <div className="flex h-full flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
+        {/* Browser button */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('open-browser-tab', { detail: { url: '', newTab: true } }))}
+          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
+          title="内置浏览器"
+        >
+          <GlobeIcon size={15} style={{ color: 'var(--wiki-text2)' }} />
+        </button>
         <button onClick={handleMinimize} className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors">
           <svg width="10" height="10" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="var(--wiki-text2)"/></svg>
         </button>

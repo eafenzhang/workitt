@@ -1,15 +1,16 @@
-import React, { useState, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import Sidebar from '../components/Sidebar';
 import TitleBar from '../components/TitleBar';
-import Dashboard from './Dashboard';
-import Requirements from './Requirements';
 import { XIcon, Trash2Icon } from 'lucide-react';
 
 // Lazy-loaded pages (code splitting for faster initial load)
+const Dashboard = lazy(() => import('./Dashboard'));
+const Requirements = lazy(() => import('./Requirements'));
 const Knowledge = lazy(() => import('./Knowledge'));
 const Insights = lazy(() => import('./Insights'));
 const MCP = lazy(() => import('./MCP'));
 const Model = lazy(() => import('./Model'));
+const Browser = lazy(() => import('./Browser'));
 const Messages = lazy(() => import('./Messages'));
 const Settings = lazy(() => import('./Settings'));
 
@@ -27,10 +28,23 @@ const Lazy = ({ children }: { children: React.ReactNode }) => (
 interface GlobalTab {
   id: string;
   title: string;
-  type: string; // 'dashboard' | 'requirements' | 'requirements-detail' | 'requirements-create' | 'knowledge' | ...
-  reqId?: number; // for requirement detail tabs
+  type: string;
+  reqId?: number;
   params?: Record<string, any>;
 }
+
+const MAX_TABS = 10;
+
+const MENU_MAP: Record<string, { type: string; title: string }> = {
+  dashboard: { type: 'dashboard', title: '仪表盘' },
+  requirements: { type: 'requirements', title: '采集库' },
+  knowledge: { type: 'knowledge', title: '知识库' },
+  insights: { type: 'insights', title: '洞察分析' },
+  mcp: { type: 'mcp', title: 'MCP工具' },
+  model: { type: 'model', title: '模型配置' },
+  messages: { type: 'messages', title: '消息中心' },
+  settings: { type: 'settings', title: '系统设置' },
+};
 
 export default function Index() {
   const [tabs, setTabs] = useState<GlobalTab[]>([{ id: 'dashboard', title: '仪表盘', type: 'dashboard' }]);
@@ -41,13 +55,12 @@ export default function Index() {
   const openTab = useCallback((type: string, title: string, extra?: Partial<GlobalTab>) => {
     setTabs(prev => {
       const existing = prev.find(t => t.type === type && t.reqId === extra?.reqId);
-      if (existing) {
-        setActiveTabId(existing.id);
-        return prev;
-      }
+      if (existing) { setActiveTabId(existing.id); return prev; }
       const newTab: GlobalTab = { id: type + '-' + Date.now(), title, type, ...extra };
       setActiveTabId(newTab.id);
-      return [...prev, newTab];
+      // Limit max tabs: remove oldest when exceeding MAX_TABS
+      const next = [...prev, newTab];
+      return next.length > MAX_TABS ? next.slice(next.length - MAX_TABS) : next;
     });
   }, []);
 
@@ -66,9 +79,36 @@ export default function Index() {
 
   const switchTab = useCallback((tabId: string) => setActiveTabId(tabId), []);
 
+  // Update browser tab URL in params (persists across tab switches)
+  const updateBrowserUrl = useCallback((url: string) => {
+    setTabs(prev => prev.map(t =>
+      t.id === activeTabId && t.type === 'browser'
+        ? { ...t, title: url.replace(/^https?:\/\//, '').substring(0, 30) || '浏览器', params: { ...t.params, url } }
+        : t
+    ));
+  }, [activeTabId]);
+
   // Sidebar menu click → open tab
   const handleMenuClick = useCallback((menuType: string, menuTitle: string) => {
     openTab(menuType, menuTitle);
+  }, [openTab]);
+
+  const onCloseSelf = useCallback(() => closeTab(activeTabId), [closeTab, activeTabId]);
+  const onToggleSidebar = useCallback(() => setSidebarCollapsed(prev => !prev), []);
+
+  // Listen for browser tab open requests
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ url: string; newTab?: boolean }>).detail;
+      const url = detail?.url;
+      if (url !== undefined) {
+        const title = url ? url.replace(/^https?:\/\//, '').substring(0, 30) : '浏览器';
+        const extra = { params: { url }, reqId: detail?.newTab ? Date.now() : undefined };
+        openTab('browser', title || '浏览器', extra);
+      }
+    };
+    window.addEventListener('open-browser-tab', handler);
+    return () => window.removeEventListener('open-browser-tab', handler);
   }, [openTab]);
 
   const activeTab = tabs.find(t => t.id === activeTabId);
@@ -112,7 +152,7 @@ export default function Index() {
   ), [tabs, activeTabId, closeTab, switchTab]);
 
   // Render page content based on active tab
-  const renderPage = () => {
+  const page = useMemo(() => {
     if (!activeTab) return null;
     switch (activeTab.type) {
       case 'dashboard':
@@ -129,7 +169,7 @@ export default function Index() {
           key={activeTab.id}
           initialTab={{ type: activeTab.type, reqId: activeTab.reqId, params: activeTab.params }}
           onOpenSubTab={(title, type, extra) => openTab(type, title, extra)}
-          onCloseSelf={() => closeTab(activeTab.id)}
+          onCloseSelf={onCloseSelf}
         />;
       case 'knowledge':
         return <Lazy><Knowledge
@@ -144,7 +184,7 @@ export default function Index() {
           initialView={activeTab.type}
           docId={activeTab.docId}
           onOpenSubTab={(title, type, extra) => openTab(type, title, extra)}
-          onCloseSelf={() => closeTab(activeTab.id)}
+          onCloseSelf={onCloseSelf}
         /></Lazy>;
       case 'insights':
         return <Lazy><Insights /></Lazy>;
@@ -154,12 +194,14 @@ export default function Index() {
         return <Lazy><Model /></Lazy>;
       case 'messages':
         return <Lazy><Messages /></Lazy>;
+      case 'browser':
+        return <Lazy><Browser initialUrl={activeTab.params?.url} onUrlChange={updateBrowserUrl} /></Lazy>;
       case 'settings':
         return <Lazy><Settings /></Lazy>;
       default:
         return <Dashboard />;
     }
-  };
+  }, [activeTab, openTab, onCloseSelf]);
 
   // Close inner tabs when closing a parent tab
   // (handled automatically by React unmounting)
@@ -169,7 +211,7 @@ export default function Index() {
       {/* Title bar spans full width */}
       <TitleBar
         sidebarCollapsed={sidebarCollapsed}
-        onToggleSidebar={() => setSidebarCollapsed(prev => !prev)}
+        onToggleSidebar={onToggleSidebar}
       >
         {tabBar}
       </TitleBar>
@@ -186,17 +228,7 @@ export default function Index() {
                      activeTab?.type === 'messages' ? 'messages' :
                      activeTab?.type === 'settings' ? 'settings' : 'dashboard'}
           onTabChange={(menuType) => {
-            const menuMap: Record<string, { type: string; title: string }> = {
-              dashboard: { type: 'dashboard', title: '仪表盘' },
-              requirements: { type: 'requirements', title: '采集库' },
-              knowledge: { type: 'knowledge', title: '知识库' },
-              insights: { type: 'insights', title: '洞察分析' },
-              mcp: { type: 'mcp', title: 'MCP工具' },
-              model: { type: 'model', title: '模型配置' },
-              messages: { type: 'messages', title: '消息中心' },
-              settings: { type: 'settings', title: '系统设置' },
-            };
-            const item = menuMap[menuType];
+            const item = MENU_MAP[menuType];
             if (item) handleMenuClick(item.type, item.title);
           }}
           collapsed={sidebarCollapsed}
@@ -206,7 +238,7 @@ export default function Index() {
         {/* Main content area */}
         <main className="flex-1 overflow-hidden">
           <div className="h-full">
-            {renderPage()}
+            <Suspense fallback={<Loading />}>{page}</Suspense>
           </div>
         </main>
       </div>
