@@ -184,6 +184,7 @@ pub fn handle_db_query(
     table: &str,
     args: Option<JsonValue>,
 ) -> JsonValue {
+    eprintln!("[db] handle_db_query: method={}, table={}, args={}", method, table, args.as_ref().map(|a| a.to_string()).unwrap_or_default());
     let data = args.as_ref().and_then(|v| v.get("data"));
     let id = args.as_ref().and_then(|v| v.get("id")).and_then(|v| v.as_i64());
 
@@ -360,10 +361,11 @@ fn handle_requirements(db: &DbState, method: &str, data: Option<&JsonValue>, id:
         }
         "POST" => {
             let d = data.unwrap_or(&serde_json::Value::Null);
+            eprintln!("[db] POST requirements data: {}", d);
             let tags = serde_json::to_string(&d.get("tags").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
             let images = serde_json::to_string(&d.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
             let content_blocks = serde_json::to_string(&d.get("content_blocks").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
-            let _ = db.conn.execute(
+            let result = db.conn.execute(
                 "INSERT INTO requirements (title, description, category, module, priority, assignee, creator, due_date, tags, images, content_blocks) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 params![
                     d.get("title").and_then(|v| v.as_str()).unwrap_or(""),
@@ -379,7 +381,9 @@ fn handle_requirements(db: &DbState, method: &str, data: Option<&JsonValue>, id:
                     content_blocks,
                 ],
             );
-            serde_json::json!({ "success": true, "id": db.last_insert_rowid() })
+            let row_id = db.conn.last_insert_rowid();
+            eprintln!("[db] POST requirements result: {:?}, row_id: {}", result, row_id);
+            serde_json::json!({ "success": true, "id": row_id })
         }
         "PUT" => {
             let Some(id) = id else { return serde_json::json!({ "error": "No id" }); };
@@ -495,8 +499,8 @@ fn handle_documents(db: &DbState, method: &str, data: Option<&JsonValue>, id: Op
         "POST" => {
             let d = data.unwrap_or(&serde_json::Value::Null);
             let tags = serde_json::to_string(&d.get("tags").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
-            let _ = db.conn.execute(
-                "INSERT INTO documents (title, category, type, size, date, tags, featured, content, file_path) VALUES (?,?,?,?,?,?,?,?,?)",
+            let new_id: i64 = db.conn.query_row(
+                "INSERT INTO documents (title, category, type, size, date, tags, featured, content, file_path) VALUES (?,?,?,?,?,?,?,?,?) RETURNING id",
                 params![
                     d.get("title").and_then(|v| v.as_str()).unwrap_or(""),
                     d.get("category").and_then(|v| v.as_str()).unwrap_or("guide"),
@@ -508,8 +512,9 @@ fn handle_documents(db: &DbState, method: &str, data: Option<&JsonValue>, id: Op
                     d.get("content").and_then(|v| v.as_str()).unwrap_or(""),
                     d.get("file_path").and_then(|v| v.as_str()).unwrap_or(""),
                 ],
-            );
-            serde_json::json!({ "success": true, "id": db.last_insert_rowid() })
+                |row| row.get(0),
+            ).unwrap_or(0);
+            serde_json::json!({ "success": true, "id": new_id })
         }
         "PUT" => {
             let Some(id) = id else { return serde_json::json!({ "error": "No id" }); };
@@ -700,8 +705,8 @@ fn handle_models(db: &DbState, method: &str, data: Option<&JsonValue>, id: Optio
                 format!("{} - {}", d.get("provider").and_then(|v| v.as_str()).unwrap_or(""), d.get("modelId").and_then(|v| v.as_str()).unwrap_or(""))
             } else { name.to_string() };
             let encrypted = encrypt_api_key(d.get("apiKey").and_then(|v| v.as_str()).unwrap_or(""));
-            let _ = db.conn.execute(
-                "INSERT INTO models (name, provider, base_url, api_key, model_id, enabled) VALUES (?,?,?,?,?,1)",
+            let new_id: i64 = db.conn.query_row(
+                "INSERT INTO models (name, provider, base_url, api_key, model_id, enabled) VALUES (?,?,?,?,?,1) RETURNING id",
                 params![
                     display_name,
                     d.get("provider").and_then(|v| v.as_str()).unwrap_or(""),
@@ -709,8 +714,9 @@ fn handle_models(db: &DbState, method: &str, data: Option<&JsonValue>, id: Optio
                     encrypted,
                     d.get("modelId").and_then(|v| v.as_str()).unwrap_or(""),
                 ],
-            );
-            serde_json::json!({ "success": true, "id": db.last_insert_rowid() })
+                |row| row.get(0),
+            ).unwrap_or(0);
+            serde_json::json!({ "success": true, "id": new_id })
         }
         "PUT" => {
             let Some(id) = id else { return serde_json::json!({ "error": "No id" }); };

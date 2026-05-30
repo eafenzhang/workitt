@@ -83,7 +83,7 @@ const DocTypeIcon = ({ type, size, style }: { type: string; size: number; style?
 interface KnowledgeProps {
   initialView?: string;
   docId?: number;
-  onOpenSubTab?: (title: string, type: string, extra?: { docId?: number }) => void;
+  onOpenSubTab?: (title: string, type: string, extra?: { docId?: number; [key: string]: any }) => void;
   onCloseSelf?: () => void;
 }
 

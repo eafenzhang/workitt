@@ -30,6 +30,7 @@ interface GlobalTab {
   title: string;
   type: string;
   reqId?: number;
+  docId?: number;
   params?: Record<string, any>;
 }
 

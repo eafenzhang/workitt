@@ -182,7 +182,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const [previewIdx, setPreviewIdx] = useState(0);
   const previewImages = useRef<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout>>();
+  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Cleanup auto-analyze timer on unmount
   useEffect(() => () => { if (autoAnalyzeRef.current) clearTimeout(autoAnalyzeRef.current); }, []);
@@ -269,6 +269,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
 
   // CRUD
   const handleCreate = async () => {
+    console.log('[handleCreate] called, form.desc=', form.desc);
     if (!form.desc.trim()) { toast.error('请输入需求描述'); return; }
     const title = form.desc.substring(0, 30) || '新建需求';
 
@@ -277,7 +278,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     try {
       const res = await apiFetch('/api/requirements', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title, desc: form.desc, module: form.module, priority: form.priority, images, creator: user?.nickname || '' }),
+        body: JSON.stringify({ title, description: form.desc, module: form.module, priority: form.priority, images, creator: user?.nickname || '' }),
       });
       // Use .data directly — avoids any .json() Promise resolution quirks
       const result = res.data;

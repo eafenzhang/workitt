@@ -24,13 +24,21 @@ async function call(method: string, table: string, data?: any, id?: number | str
   return res.json();
 }
 
-function upload(table: string, formData: FormData): Promise<any> {
-  if (api) return api.dbUpload(table, Array.from((formData.get('file') as File)?.arrayBuffer() || []));
+async function upload(table: string, formData: FormData): Promise<any> {
+  if (api) {
+    const file = formData.get('file') as File | null;
+    const buf = file ? await file.arrayBuffer() : new ArrayBuffer(0);
+    return api.dbUpload(table, Array.from(new Uint8Array(buf)));
+  }
   return fetch(`/api/${table}/upload`, { method: 'POST', body: formData }).then(r => r.json());
 }
 
-function uploadImage(formData: FormData): Promise<any> {
-  if (api) return api.dbUpload('requirements', Array.from((formData.get('image') as File)?.arrayBuffer() || []));
+async function uploadImage(formData: FormData): Promise<any> {
+  if (api) {
+    const file = formData.get('image') as File | null;
+    const buf = file ? await file.arrayBuffer() : new ArrayBuffer(0);
+    return api.dbUpload('requirements', Array.from(new Uint8Array(buf)));
+  }
   return fetch('/api/requirements/upload-image', { method: 'POST', body: formData }).then(r => r.json());
 }
 
@@ -120,3 +128,30 @@ export const db = {
     stats: () => call('GET', 'storage/stats'),
   },
 };
+
+/** API path constants */
+export const API = {
+  requirements: '/api/requirements',
+  requirementsUploadImage: '/api/requirements/upload-image',
+  requirementsAnalyze: (id: number) => `/api/requirements/${id}/analyze`,
+  requirementsById: (id: number) => `/api/requirements/${id}`,
+  documents: '/api/documents',
+  documentsUpload: '/api/documents/upload',
+  documentsById: (id: number) => `/api/documents/${id}`,
+  documentsPreview: (id: number) => `/api/documents/${id}/preview`,
+  documentsSummarize: (id: number) => `/api/documents/${id}/summarize`,
+  models: '/api/models',
+  modelsById: (id: number) => `/api/models/${id}`,
+  storageStats: '/api/storage/stats',
+  knowledgeCategories: '/api/knowledge_categories',
+  mcp: '/api/mcp',
+  mcpById: (id: number) => `/api/mcp/${id}`,
+  mcpToken: (serverId: number) => `/api/mcp/${serverId}/token`,
+  mcpServers: '/api/mcp_servers',
+  insights: {
+    kpis: '/api/insights/kpis',
+    charts: '/api/insights/charts',
+    aiInsights: '/api/insights/ai-insights',
+    activities: '/api/insights/activities',
+  },
+} as const;

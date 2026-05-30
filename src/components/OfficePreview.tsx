@@ -39,7 +39,7 @@ export default function OfficePreview({ dataUrl, fileName }: Props) {
         // DOCX
         if (ext === '.docx' || ext === '.doc') {
           const mammoth = await import('mammoth');
-          const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+          const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(0) as ArrayBuffer });
           if (cancelled) return;
           setState({ status: 'html', html: result.value });
           return;
@@ -68,7 +68,7 @@ export default function OfficePreview({ dataUrl, fileName }: Props) {
         // PPTX — extract text via mammoth (it supports .pptx too)
         if (ext === '.pptx' || ext === '.ppt') {
           const mammoth = await import('mammoth');
-          const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer });
+          const result = await mammoth.convertToHtml({ arrayBuffer: bytes.buffer.slice(0) as ArrayBuffer });
           if (cancelled) return;
           if (result.value && result.value.trim()) {
             setState({ status: 'html', html: result.value });

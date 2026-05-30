@@ -144,7 +144,7 @@ export default function QuickCapture() {
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [previewItem, setPreviewItem] = useState<CaptureItem | null>(null);
   const mountedRef = useRef(true);
-  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout>>();
+  const autoAnalyzeRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => () => { if (autoAnalyzeRef.current) clearTimeout(autoAnalyzeRef.current); }, []);
 
