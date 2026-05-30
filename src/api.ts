@@ -5,7 +5,7 @@ let preloadWarned = false;
 
 async function call(method: string, table: string, data?: any, id?: number | string): Promise<any> {
   if (api) {
-    if (!ipcLogged) { ipcLogged = true; }
+    if (!ipcLogged) { console.log('[api] Using Electron IPC path (electronAPI detected)'); ipcLogged = true; }
     const result = await api.dbQuery(method, table, { data, id });
     return result;
   }
@@ -63,7 +63,10 @@ export async function apiFetch(url: string, opts?: RequestInit): Promise<any> {
         table = parts.join('/');
       }
     }
-    const data = await call(method, table, body, id);
+    const dataPayload = method === 'GET' && Object.keys(query).length > 0
+      ? query
+      : body;
+    const data = await call(method, table, dataPayload || undefined, id);
     return { json: () => Promise.resolve(data), data };
   }
   const res = await fetch(url, opts);

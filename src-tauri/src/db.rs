@@ -231,7 +231,119 @@ fn handle_requirements(db: &DbState, method: &str, data: Option<&JsonValue>, id:
                 }
                 serde_json::json!({ "error": "Not found" })
             } else {
-                let mut stmt = match db.conn.prepare("SELECT id, title, description, category, module, priority, status, assignee, creator, due_date, tags, images, ai_summary, ai_tags, image_descriptions, workflow_handler, workflow_history, created_at, updated_at, content_blocks FROM requirements ORDER BY created_at DESC") {
+                // Check for pagination params in data (from query string)
+                let page = data.and_then(|d| d.get("_page")).and_then(|v| v.as_str()).and_then(|s| s.parse::<i64>().ok());
+                let page_size = data.and_then(|d| d.get("_pageSize")).and_then(|v| v.as_str()).and_then(|s| s.parse::<i64>().ok());
+                let search = data.and_then(|d| d.get("search")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let status_filter = data.and_then(|d| d.get("status")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let priority_filter = data.and_then(|d| d.get("priority")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let category_filter = data.and_then(|d| d.get("category")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let assignee_filter = data.and_then(|d| d.get("assignee")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let date_from = data.and_then(|d| d.get("dateFrom")).and_then(|v| v.as_str()).map(|s| s.to_string());
+                let date_to = data.and_then(|d| d.get("dateTo")).and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                let use_pagination = page.is_some() && page_size.is_some();
+
+                // Build WHERE clauses for filtering
+                let mut where_clauses: Vec<String> = vec![];
+                if let Some(ref s) = search {
+                    if !s.is_empty() {
+                        where_clauses.push(format!("(title LIKE '%{}%' OR description LIKE '%{}%')", s.replace('\'', "''"), s.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref s) = status_filter {
+                    if !s.is_empty() && s != "全部" {
+                        where_clauses.push(format!("status = '{}'", s.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref s) = priority_filter {
+                    if !s.is_empty() && s != "全部" {
+                        where_clauses.push(format!("priority = '{}'", s.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref s) = category_filter {
+                    if !s.is_empty() && s != "全部" {
+                        where_clauses.push(format!("category = '{}'", s.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref s) = assignee_filter {
+                    if !s.is_empty() && s != "全部" {
+                        where_clauses.push(format!("assignee LIKE '%{}%'", s.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref d) = date_from {
+                    if !d.is_empty() {
+                        where_clauses.push(format!("created_at >= '{}'", d.replace('\'', "''")));
+                    }
+                }
+                if let Some(ref d) = date_to {
+                    if !d.is_empty() {
+                        where_clauses.push(format!("created_at <= '{} 23:59:59'", d.replace('\'', "''")));
+                    }
+                }
+                let where_sql = if where_clauses.is_empty() {
+                    String::new()
+                } else {
+                    format!("WHERE {}", where_clauses.join(" AND "))
+                };
+
+                if use_pagination {
+                    let pg = page.unwrap();
+                    let ps = page_size.unwrap();
+
+                    // Count total
+                    let count_sql = format!("SELECT COUNT(*) FROM requirements {}", where_sql);
+                    let total: i64 = db.conn.query_row(&count_sql, [], |row| row.get(0)).unwrap_or(0);
+
+                    // Count by status (unfiltered, for status bar)
+                    let mut counts: std::collections::HashMap<String, i64> = std::collections::HashMap::new();
+                    let statuses = vec!["待评估", "设计中", "实现中", "测试中", "已完成"];
+                    for st in &statuses {
+                        if let Ok(c) = db.conn.query_row(
+                            &format!("SELECT COUNT(*) FROM requirements WHERE status = '{}'", st),
+                            [],
+                            |row| row.get(0),
+                        ) {
+                            counts.insert(st.to_string(), c);
+                        }
+                    }
+
+                    // Fetch page
+                    let offset = (pg - 1) * ps;
+                    let query_sql = format!(
+                        "SELECT id, title, description, category, module, priority, status, assignee, creator, due_date, tags, images, ai_summary, ai_tags, image_descriptions, workflow_handler, workflow_history, created_at, updated_at, content_blocks FROM requirements {} ORDER BY created_at DESC LIMIT {} OFFSET {}",
+                        where_sql, ps, offset
+                    );
+                    let mut stmt = match db.conn.prepare(&query_sql) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            error!("Pagination query failed: {} sql={}", e, query_sql);
+                            return serde_json::json!({ "error": "Query failed" });
+                        }
+                    };
+                    let mut rows = match stmt.query([]) {
+                        Ok(r) => r,
+                        Err(_) => return serde_json::json!({ "error": "Query failed" }),
+                    };
+                    let mut items = vec![];
+                    while let Ok(Some(row)) = rows.next() {
+                        items.push(format_req_row(row));
+                    }
+
+                    return serde_json::json!({
+                        "items": items,
+                        "total": total,
+                        "counts": counts,
+                    });
+                }
+
+                // No pagination — return all (compatible with old API)
+                let query_sql = if where_sql.is_empty() {
+                    "SELECT id, title, description, category, module, priority, status, assignee, creator, due_date, tags, images, ai_summary, ai_tags, image_descriptions, workflow_handler, workflow_history, created_at, updated_at, content_blocks FROM requirements ORDER BY created_at DESC".to_string()
+                } else {
+                    format!("SELECT id, title, description, category, module, priority, status, assignee, creator, due_date, tags, images, ai_summary, ai_tags, image_descriptions, workflow_handler, workflow_history, created_at, updated_at, content_blocks FROM requirements {} ORDER BY created_at DESC", where_sql)
+                };
+                let mut stmt = match db.conn.prepare(&query_sql) {
                     Ok(s) => s,
                     Err(_) => return serde_json::json!([]),
                 };
@@ -275,8 +387,13 @@ fn handle_requirements(db: &DbState, method: &str, data: Option<&JsonValue>, id:
             let tags = serde_json::to_string(&d.get("tags").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
             let images = serde_json::to_string(&d.get("images").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
             let content_blocks = serde_json::to_string(&d.get("content_blocks").and_then(|v| v.as_array()).cloned().unwrap_or_default()).unwrap_or_else(|_| "[]".to_string());
+            let workflow_handler = d.get("workflow_handler").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_default();
+            let workflow_history = d.get("workflow_history").and_then(|v| v.as_str()).map(|s| s.to_string()).unwrap_or_else(|| {
+                // If workflow_history is a JSON array, stringify it
+                d.get("workflow_history").map(|v| serde_json::to_string(v).unwrap_or_default()).unwrap_or_default()
+            });
             let _ = db.conn.execute(
-                "UPDATE requirements SET title=?, description=?, category=?, module=?, priority=?, status=?, assignee=?, creator=?, due_date=?, tags=?, images=?, content_blocks=?, updated_at=datetime('now','localtime') WHERE id=?",
+                "UPDATE requirements SET title=?, description=?, category=?, module=?, priority=?, status=?, assignee=?, creator=?, due_date=?, tags=?, images=?, content_blocks=?, workflow_handler=?, workflow_history=?, updated_at=datetime('now','localtime') WHERE id=?",
                 params![
                     d.get("title").and_then(|v| v.as_str()).unwrap_or(""),
                     d.get("description").and_then(|v| v.as_str()).unwrap_or(""),
@@ -290,6 +407,8 @@ fn handle_requirements(db: &DbState, method: &str, data: Option<&JsonValue>, id:
                     tags,
                     images,
                     content_blocks,
+                    workflow_handler,
+                    workflow_history,
                     id,
                 ],
             );

@@ -22,9 +22,11 @@ const App = () => {
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       const target = e.target as HTMLElement;
-      const anchor = target.closest('a');
+      const anchor = target.closest('a') || target.closest('button');
       if (!anchor) return;
-      const href = anchor.getAttribute('href');
+      // Skip elements explicitly marked for external/system browser
+      if (anchor.hasAttribute('data-bypass-interceptor')) return;
+      const href = anchor.getAttribute('href') || (anchor as HTMLAnchorElement).href;
       if (href && /^https?:\/\//.test(href)) {
         e.preventDefault();
         e.stopPropagation();

@@ -70,6 +70,12 @@ export function rebuildBlocksFromLegacy(desc: string, images: string[]): Content
       continue;
     }
 
+    // [视频] marker — create video block (without content for legacy data)
+    if (trimmed === '[视频]') {
+      blocks.push({ type: 'video', content: '' });
+      continue;
+    }
+
     // Regular text
     blocks.push({ type: 'text', content: trimmed });
   }

@@ -93,63 +93,46 @@ const modules = ['系统后台', '机构后台', '品牌门店', '收银终端',
 const priorities = ['高', '中', '低'];
 
 // Memoized list item to avoid re-rendering all items on any state change
-function getContentTags(req: Requirement): string[] {
-  const tags: string[] = [];
-  const desc = req.desc || '';
-  if (desc.trim()) tags.push('文本');
-  if (/https?:\/\//.test(desc)) tags.push('链接');
-  if (/\[视频\]/.test(desc)) tags.push('视频');
-  if (/\[附件/.test(desc) || /\[文件[：:]/.test(desc)) {
-    if (!tags.includes('文件')) tags.push('文件');
-  }
-  if (req.images?.length) tags.push('图片');
-  const blocks = req.contentBlocks;
-  if (blocks?.length) {
-    for (const b of blocks) {
-      if (b.type === 'video' && !tags.includes('视频')) tags.push('视频');
-      if (b.type === 'file' && !tags.includes('文件')) tags.push('文件');
-      if (b.type === 'table' && !tags.includes('表格')) tags.push('表格');
-    }
-  }
-  return tags;
-}
-
 const ReqListItem = memo(function ReqListItem({
   req, onOpen, formatDate,
 }: {
   req: Requirement;
   onOpen: (req: Requirement) => void;
   formatDate: (d: string) => string;
+  onPriorityChange?: (req: Requirement, p: string) => void;
 }) {
   const statusCfg = statusConfig[req.status] || statusConfig['待评估'];
   const priorityCfg = priorityConfig[req.priority] || priorityConfig['中'];
   const StatusIcon = statusCfg.icon;
   return (
-    <div onClick={() => onOpen(req)} className="p-5 rounded-lg cursor-pointer transition-all duration-200"
-      style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-      <div className="flex items-start justify-between mb-2">
-        <div className="flex items-center gap-3 flex-1">
-          <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: statusCfg.bg }}><StatusIcon size={14} style={{ color: statusCfg.color }} /></div>
-          <div className="flex-1">
-            <div className="text-sm font-semibold text-wiki-text mb-0.5">{req.aiSummary || req.desc?.substring(0, 50) || req.title}</div>
-            {req.aiSummary && <div className="text-xs text-wiki-text3 line-clamp-1">{req.title}</div>}
+    <div onClick={() => onOpen(req)}
+      className="px-4 py-2.5 rounded-lg cursor-pointer transition-colors duration-150 group flex items-center gap-3"
+      style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}
+      onMouseEnter={e => { e.currentTarget.style.background = 'var(--wiki-surface2)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'var(--wiki-surface)'; }}>
+      {/* Left: status icon — vertically centered */}
+      <div className="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0" style={{ background: statusCfg.bg }}>
+        <StatusIcon size={13} style={{ color: statusCfg.color }} />
+      </div>
+      {/* Right: content */}
+      <div className="flex-1 min-w-0">
+        {/* Row 1: title + priority */}
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-semibold text-wiki-text truncate flex-1">{req.title}</span>
+          <span className="text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0 cursor-pointer hover:opacity-80"
+            style={{ background: priorityCfg.bg, color: priorityCfg.color }}
+            onClick={e => { e.stopPropagation(); }}
+            title="点击修改优先级">{req.priority}</span>
+        </div>
+        {/* Row 2: description | meta */}
+        <div className="flex items-center gap-3 mt-1">
+          <span className="text-xs text-wiki-text3 line-clamp-1 flex-1">{req.aiSummary || req.desc?.substring(0, 80) || '暂无描述'}</span>
+          <div className="flex items-center gap-2 text-xs text-wiki-text3 flex-shrink-0">
+            <span className="flex items-center gap-0.5"><UserIcon size={10} />{req.creator}</span>
+            <span className="flex items-center gap-0.5"><CalendarIcon size={10} />{formatDate(req.createdAt)}</span>
+            <span>{req.module}</span>
           </div>
         </div>
-        <div className="flex items-center gap-2 ml-4">
-          <span className="text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: priorityCfg.bg, color: priorityCfg.color }}>{req.priority}优先级</span>
-          <span className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-full font-medium" style={{ background: statusCfg.bg, color: statusCfg.color }}>{req.status}</span>
-        </div>
-      </div>
-      <div className="flex items-center justify-between mt-2 flex-wrap gap-2">
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><UserIcon size={11} /><span>{req.creator}</span></div>
-          <div className="flex items-center gap-1.5 text-xs text-wiki-text3"><CalendarIcon size={11} /><span>{formatDate(req.createdAt)}</span></div>
-          <div className="flex items-center gap-1.5 text-xs px-2 py-0.5 rounded-md" style={{ background: `var(--wiki-surface2)`, color: `var(--wiki-text2)` }}>{req.module}</div>
-          {getContentTags(req).map(tag => (
-            <span key={tag} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--wiki-surface)', color: 'var(--wiki-text3)', border: '1px solid var(--wiki-border)' }}>{tag}</span>
-          ))}
-        </div>
-        <div className="flex items-center gap-1.5 flex-wrap">{(req.aiTags || []).map((tag) => (<span key={tag} className="text-xs px-2.5 py-1 rounded-md font-medium" style={{ background: 'rgba(99,102,241,0.15)', color: '#6366f1' }}>#{tag}</span>))}</div>
       </div>
     </div>
   );
@@ -187,8 +170,16 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilter, setShowFilter] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const pageSize = 10;
+  // Internal view routing — allows edit to stay in same tab and return to detail
+  const [localView, setLocalView] = useState<string | null>(null);
+  const [localReqId, setLocalReqId] = useState<number | null>(null);
+  // Status counts from API (unfiltered, for the status bar)
+  const [allStatusCounts, setAllStatusCounts] = useState<Record<string, number>>({ '待评估': 0, '设计中': 0, '实现中': 0, '测试中': 0, '已完成': 0 });
   const [editingReq, setEditingReq] = useState<Requirement | null>(null);
-  const [form, setForm] = useState({ desc: '', module: '用户端', priority: '中' });
+  const [form, setForm] = useState({ title: '', desc: '', module: '用户端', priority: '中' });
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -201,16 +192,16 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   // Cleanup auto-analyze timer on unmount
   useEffect(() => () => { if (autoAnalyzeRef.current) clearTimeout(autoAnalyzeRef.current); }, []);
 
-  // Determine current view based on initialTab
-  const viewType = initialTab?.type || 'requirements';
-  const detailReqId = initialTab?.reqId;
+  // Effective view: local state overrides initialTab prop (for internal edit→detail switching)
+  const viewType = localView ?? (initialTab?.type || 'requirements');
+  const detailReqId = localReqId ?? initialTab?.reqId;
 
   useEffect(() => {
-    fetchRequirements();
-    // P0-06: Use electronAPI forwarding instead of window.addEventListener
+    fetchPage(1);
     const api = (window as any).electronAPI;
-    const unsub = api?.onRequirementsChanged?.(() => fetchRequirements());
+    const unsub = api?.onRequirementsChanged?.(() => fetchPage(1));
     return () => { if (unsub) unsub(); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keyboard navigation for image preview lightbox
@@ -225,20 +216,42 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     return () => window.removeEventListener('keydown', handler);
   }, [previewImage]);
 
-  const fetchRequirements = useCallback(() => {
-    apiFetch('/api/requirements').then(r => r.json()).then(data => setRequirements(data));
-  }, []);
+  // Fetch single page from server with current filters (server-side pagination)
+  const fetchPage = useCallback(async (pageNum: number) => {
+    const params = new URLSearchParams();
+    params.set('_page', String(pageNum));
+    params.set('_pageSize', String(pageSize));
+    if (search) params.set('search', search);
+    if (filterStatus !== '全部') params.set('status', filterStatus);
+    if (filterPriority !== '全部') params.set('priority', filterPriority);
+    if (filterCategory !== '全部') params.set('category', filterCategory);
+    if (filterAssignee !== '全部') params.set('assignee', filterAssignee);
+    if (dateFrom) params.set('dateFrom', dateFrom);
+    if (dateTo) params.set('dateTo', dateTo);
 
-  const filteredRequirements = useMemo(() => requirements.filter(r => {
-    if (search) { const s = search.toLowerCase(); if (!(r.title||'').toLowerCase().includes(s) && !(r.desc||'').toLowerCase().includes(s)) return false; }
-    if (filterStatus !== '全部' && r.status !== filterStatus) return false;
-    if (filterPriority !== '全部' && r.priority !== filterPriority) return false;
-    if (filterCategory !== '全部' && r.category !== filterCategory) return false;
-    if (filterAssignee !== '全部' && r.assignee !== filterAssignee) return false;
-    if (dateFrom && (!r.createdAt || r.createdAt < dateFrom)) return false;
-    if (dateTo && (!r.createdAt || r.createdAt > dateTo)) return false;
-    return true;
-  }), [requirements, search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo]);
+    const res = await apiFetch(`/api/requirements?${params}`);
+    const data = await res.json();
+    if (data && data.items) {
+      setRequirements(data.items);
+      setTotalCount(data.total);
+      setCurrentPage(pageNum);
+      if (data.counts) setAllStatusCounts(data.counts);
+    } else if (Array.isArray(data)) {
+      // Fallback for old API (array) format
+      setRequirements(data);
+      setTotalCount(data.length);
+      setCurrentPage(1);
+    }
+  }, [search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo, pageSize]);
+
+  // Trigger re-fetch on filter change (reset to page 1)
+  useEffect(() => {
+    setCurrentPage(1);
+    fetchPage(1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   const detailReq = detailReqId ? requirements.find(r => r.id === detailReqId) : null;
   // Load full contentBlocks on demand when listing excluded them
@@ -251,19 +264,18 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     }
   }, [viewType, detailReqId, detailReq?.contentBlocks]);
 
-  // Memoize status counts to avoid re-filtering on every render
+  // Status bar — uses counts from API (unfiltered, always total)
   const statusStats = useMemo(() => {
-    const counts: Record<string, number> = { '待评估': 0, '设计中': 0, '实现中': 0, '测试中': 0, '已完成': 0 };
-    for (const r of requirements) { if (counts[r.status] !== undefined) counts[r.status]++; }
+    const totalAll = Object.values(allStatusCounts).reduce((a, b) => a + b, 0);
     return [
-      { label: `全部`, count: requirements.length, color: `var(--wiki-text)`, status: `全部` },
-      { label: `待评估`, count: counts['待评估'], color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
-      { label: `设计中`, count: counts['设计中'], color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
-      { label: `实现中`, count: counts['实现中'], color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
-      { label: `测试中`, count: counts['测试中'], color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
-      { label: `已完成`, count: counts['已完成'], color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
+      { label: `全部`, count: totalAll, color: `var(--wiki-text)`, status: `全部` },
+      { label: `待评估`, count: allStatusCounts['待评估'] || 0, color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
+      { label: `设计中`, count: allStatusCounts['设计中'] || 0, color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
+      { label: `实现中`, count: allStatusCounts['实现中'] || 0, color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
+      { label: `测试中`, count: allStatusCounts['测试中'] || 0, color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
+      { label: `已完成`, count: allStatusCounts['已完成'] || 0, color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
     ];
-  }, [requirements]);
+  }, [allStatusCounts]);
 
   // Open detail in parent tab
   const openDetail = useCallback((req: Requirement) => {
@@ -274,17 +286,19 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     onOpenSubTab?.('新建需求', 'requirements-create');
   };
 
-  const openEdit = (req: Requirement) => {
+  const openEdit = useCallback((req: Requirement) => {
     setEditingReq(req);
-    setForm({ desc: req.desc, module: req.module || '用户端', priority: req.priority });
+    setForm({ title: req.title || '', desc: req.desc, module: req.module || '用户端', priority: req.priority });
     setImages(req.images || []);
-    onOpenSubTab?.('编辑: ' + (req.title?.substring(0, 15) || ''), 'requirements-edit', { reqId: req.id });
-  };
+    setDetailBlocks(req.contentBlocks);
+    setLocalView('requirements-edit');
+    setLocalReqId(req.id);
+  }, []);
 
   // CRUD
   const handleCreate = async () => {
-    if (!form.desc.trim()) { toast.error('请输入需求描述'); return; }
-    const title = form.desc.substring(0, 30) || '新建需求';
+    if (!form.title.trim() && !form.desc.trim()) { toast.error('请输入标题或描述'); return; }
+    const title = form.title.trim() || form.desc.substring(0, 30) || '新建需求';
 
     // Step 1: save
     let newId: number | null = null;
@@ -301,8 +315,8 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
       newId = extractedId;
     } catch (e) { console.error('[handleCreate] save error', e); toast.error('创建失败'); return; }
 
-    // Step 2: UI cleanup (separate try-catch so auto-analyze still runs even if UI ops fail)
-    try { resetForm(); fetchRequirements(); onCloseSelf?.(); toast.success('需求创建成功'); } catch {}
+    // Step 2: UI cleanup
+    try { resetForm(); fetchPage(1); onCloseSelf?.(); toast.success('需求创建成功'); } catch {}
 
     // Step 3: auto-analyze (independent of UI cleanup)
     if (newId) {
@@ -318,34 +332,35 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
             const aRes = await apiFetch(`/api/requirements/${newId}/analyze`, { method: 'POST' });
             const aData = aRes.data;
             if (aData.error) toast.error(aData.error);
-            else { fetchRequirements(); toast.success('AI 分析完成'); }
+            else { fetchPage(1); toast.success('AI 分析完成'); }
           }
         } catch (e) { console.error('[auto-analyze] error', e); }
       }, 600);
     }
   };
 
-  const handleUpdate = () => {
+  const handleUpdate = useCallback(() => {
     if (!editingReq) return;
     apiFetch(`/api/requirements/${editingReq.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: editingReq.title, desc: form.desc, module: form.module, priority: form.priority, images }),
+      body: JSON.stringify({ title: form.title || editingReq.title, desc: form.desc, module: form.module, priority: form.priority, images }),
     }).then(r => r.json()).then(() => {
-      setEditingReq(null); resetForm(); fetchRequirements();
-      onCloseSelf?.();
+      setEditingReq(null); resetForm(); fetchPage(currentPage);
+      // Return to detail view (not close the tab)
+      setLocalView('requirements-detail');
       toast.success('需求更新成功');
     });
-  };
+  }, [editingReq, form, images, currentPage, fetchPage]);
 
   const handleDelete = (id: number) => {
     if (!confirm('确定删除？')) return;
     apiFetch(`/api/requirements/${id}`, { method: 'DELETE' }).then(() => {
       onCloseSelf?.();
-      fetchRequirements(); toast.success('已删除');
+      fetchPage(1); toast.success('已删除');
     });
   };
 
-  const resetForm = () => { setForm({ desc: '', module: '用户端', priority: '中' }); setImages([]); };
+  const resetForm = () => { setForm({ title: '', desc: '', module: '用户端', priority: '中' }); setImages([]); };
 
   const uploadImage = async (file: File) => {
     setUploading(true); const formData = new FormData(); formData.append('image', file);
@@ -392,6 +407,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
           <div className="flex items-center gap-2 flex-1 px-4 py-2 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
             <SearchIcon size={15} style={{ color: 'var(--wiki-text3)' }} />
             <input className="bg-transparent flex-1 text-xs outline-none text-wiki-text placeholder:text-wiki-text3" placeholder="搜索..." value={searchInput} onChange={(e) => setSearchInput(e.target.value)} />
+            {searchInput && <button onClick={() => { setSearchInput(''); setSearch(''); }} className="text-wiki-text3 hover:text-wiki-text transition-colors"><XIcon size={14} /></button>}
           </div>
           <button onClick={() => setShowFilter(!showFilter)} className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
             style={{ background: `var(--wiki-surface)`, border: `1px solid var(--wiki-border)`, color: `var(--wiki-text2)` }}>
@@ -433,19 +449,34 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
         )}
         <div className="flex gap-3 mb-4 px-8">
           {statusStats.map((stat) => (
-            <div key={stat.label} onClick={() => setFilterStatus(stat.status)} className="flex items-center gap-2 px-3 py-2 rounded-md cursor-pointer transition-all"
-              style={{ background: filterStatus === stat.status ? `var(--wiki-surface2)` : `var(--wiki-surface)`, border: filterStatus === stat.status ? `1px solid var(--wiki-border)` : `1px solid transparent` }}>
-              <div className="w-2 h-2 rounded-full" style={{ background: stat.color }} />
-              <span className="text-xs text-wiki-text3">{stat.label}</span>
-              <span className="text-xs font-bold text-wiki-text">{stat.count}</span>
+            <div key={stat.label} onClick={() => setFilterStatus(stat.status === filterStatus ? '全部' : stat.status)}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors"
+              style={{
+                background: filterStatus === stat.status ? stat.color : 'var(--wiki-surface)',
+                color: filterStatus === stat.status ? '#fff' : 'var(--wiki-text3)',
+                border: filterStatus === stat.status ? 'none' : '1px solid var(--wiki-border)',
+              }}>
+              <div className="w-1.5 h-1.5 rounded-full" style={{ background: filterStatus === stat.status ? '#fff' : stat.color }} />
+              <span className="text-xs font-medium">{stat.label}</span>
+              <span className="text-xs font-bold">{stat.count}</span>
             </div>
           ))}
         </div>
-        <div className="flex flex-col gap-3 overflow-y-auto scrollbar-thin flex-1 px-8 pb-8">
-          {filteredRequirements.map((req) => (
+        <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 px-8 pb-6" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+          {requirements.map((req) => (
             <ReqListItem key={req.id} req={req} onOpen={openDetail} formatDate={formatDate} />
           ))}
         </div>
+        {totalCount > pageSize && (
+          <div className="flex items-center justify-center gap-3 px-6 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--wiki-border)' }}>
+            <button onClick={() => fetchPage(currentPage - 1)} disabled={currentPage <= 1}
+              className="px-3 py-1 rounded text-xs hover:bg-wiki-surface2 disabled:opacity-30 transition-colors" style={{ color: 'var(--wiki-text2)' }}>上一页</button>
+            <span className="text-xs text-wiki-text2">{currentPage} / {totalPages}</span>
+            <button onClick={() => fetchPage(currentPage + 1)} disabled={currentPage >= totalPages}
+              className="px-3 py-1 rounded text-xs hover:bg-wiki-surface2 disabled:opacity-30 transition-colors" style={{ color: 'var(--wiki-text2)' }}>下一页</button>
+            <span className="text-xs text-wiki-text3">共 {totalCount} 条</span>
+          </div>
+        )}
       </div>
     );
   }
@@ -463,25 +494,62 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
               <span className="text-xs px-2 py-0.5 rounded" style={{ background: priorityConfig[detailReq.priority]?.bg, color: priorityConfig[detailReq.priority]?.color }}>{detailReq.priority}</span>
             </div>
           </div>
-          {/* Action buttons: AI分析 推进 编辑 删除 返回 */}
+          {/* Action buttons */}
           <button onClick={() => handleAnalyze(detailReq)} disabled={analyzing} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0" style={{ background: analyzing ? 'var(--wiki-surface2)' : 'rgba(99,102,241,0.12)', color: analyzing ? 'var(--wiki-text2)' : '#6366f1' }}>
             <SparklesIcon size={13} /><span>{analyzing ? '分析中...' : 'AI分析'}</span>
           </button>
-          {detailReq.status !== '已完成' && (
-            <button onClick={() => { const so = ['待评估','设计中','实现中','测试中','已完成']; const ni = so.indexOf(detailReq.status)+1; if (ni < so.length) { if (!confirm(`确定推进到「${so[ni]}」？`)) return; apiFetch(`/api/requirements/${detailReq.id}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({title:detailReq.title,desc:detailReq.desc,module:detailReq.module,priority:detailReq.priority,status:so[ni],assignee:detailReq.assignee,workflow_handler:detailReq.assignee,images:detailReq.images})}).then(()=>{fetchRequirements();toast.success(`已推进到「${so[ni]}」`);}); }}}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0 font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
-              <CheckCircleIcon size={13} /> 推进
-            </button>
-          )}
           <button onClick={() => openEdit(detailReq)} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
             <EditIcon size={13} /> 编辑
           </button>
           <button onClick={() => handleDelete(detailReq.id)} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0" style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}>
             <TrashIcon size={13} /> 删除
           </button>
-          <button onClick={onCloseSelf} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text3)' }}>
-            <XIcon size={13} /> 返回
+          <button onClick={onCloseSelf} className="flex items-center gap-1.5 px-3 py-2 rounded-md text-xs flex-shrink-0" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+            <ChevronLeftIcon size={14} /> 返回列表
           </button>
+        </div>
+        {/* Workflow — 流转 */}
+        <div className="px-8 py-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-wiki-text3 flex-shrink-0">流转:</span>
+            {['待评估','设计中','实现中','测试中','已完成'].map((step, i) => {
+              const so = ['待评估','设计中','实现中','测试中','已完成'];
+              const ci = so.indexOf(detailReq.status);
+              const done = i < ci; const cur = i === ci;
+              const statusCfg = statusConfig[step] || statusConfig['待评估'];
+              const StepIcon = statusCfg.icon;
+              return (
+                <button key={step} onClick={async () => {
+                  if (done || cur || i > ci + 1) return;
+                  const memo = prompt(`流转到「${step}」\n请输入备注（可选）:`);
+                  if (memo === null) return; // user cancelled
+                  const body: any = { title: detailReq.title, desc: detailReq.desc, module: detailReq.module, priority: detailReq.priority, status: step, assignee: detailReq.assignee, workflow_handler: detailReq.assignee, images: detailReq.images };
+                  if (memo) body.workflow_history = JSON.stringify([...(detailReq.workflowHistory || []), { from: detailReq.status, to: step, at: new Date().toISOString(), memo, handler: detailReq.assignee }]);
+                  try {
+                    await apiFetch(`/api/requirements/${detailReq.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                    // Update local state immediately for instant UI feedback
+                    setRequirements(prev => prev.map(r =>
+                      r.id === detailReq.id
+                        ? { ...r, status: step, workflowHistory: [...(r.workflowHistory || []), { from: r.status, to: step, handler: detailReq.assignee, time: new Date().toLocaleString('zh-CN') }] }
+                        : r
+                    ));
+                    fetchPage(currentPage); // refresh list in background
+                    toast.success(`已流转到「${step}」`);
+                  } catch { toast.error('流转失败'); }
+                }}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors"
+                  style={{
+                    background: done ? '#10b98120' : cur ? 'var(--wiki-text)' : 'transparent',
+                    color: done ? '#10b981' : cur ? 'var(--wiki-bg)' : i === ci + 1 ? 'var(--wiki-text2)' : 'var(--wiki-text3)',
+                    cursor: i === ci + 1 ? 'pointer' : 'default',
+                  }}>
+                  <StepIcon size={12} />
+                  <span>{step}</span>
+                  {done && <span className="text-[10px]">✓</span>}
+                </button>
+              );
+            })}
+          </div>
         </div>
         <div className="flex-1 overflow-y-auto px-8 py-4 scrollbar-thin">
           <div className="flex flex-col gap-4">
@@ -492,17 +560,6 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
                 {(detailReq.aiTags?.length > 0) && <div className="flex flex-wrap gap-1.5 mt-2">{(detailReq.aiTags || []).map(tag => (<span key={tag} className="text-xs px-2.5 py-1 rounded-md font-medium" style={{ background: 'rgba(99,102,241,0.15)', color: '#6366f1' }}>#{tag}</span>))}</div>}
               </div>
             )}
-            <div className="p-4 rounded-lg" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)' }}>
-              <div className="text-xs text-wiki-text3 mb-3">需求流转</div>
-              <div className="flex items-center">
-                {['待评估','设计中','实现中','测试中','已完成'].map((step, i) => {
-                  const so = ['待评估','设计中','实现中','测试中','已完成'];
-                  const ci = so.indexOf(detailReq.status);
-                  const done = i < ci; const cur = i === ci;
-                  return (<div key={step} className="flex items-center" style={{ flex: i < 4 ? 1 : 'none' }}><div className="flex flex-col items-center"><div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-medium" style={{ background: done ? '#10b981' : cur ? 'var(--wiki-text)' : 'var(--wiki-surface2)', color: done || cur ? 'var(--wiki-bg)' : 'var(--wiki-text3)' }}>{done ? '✓' : i + 1}</div><div className="text-xs mt-1 text-center" style={{ color: cur ? 'var(--wiki-text)' : 'var(--wiki-text3)', fontSize: '10px' }}>{step}</div></div>{i < 4 && <div className="flex-1 h-0.5 mx-1" style={{ background: done ? '#10b981' : 'var(--wiki-border)' }} />}</div>);
-                })}
-              </div>
-            </div>
             <div className="p-4 rounded-lg" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)' }}>
               <div className="text-xs text-wiki-text3 mb-2">需求描述</div>
               <MemoizedContentBlocks
@@ -528,6 +585,9 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   return (
     <div data-cmp="RequirementsForm" className="flex flex-col h-full">
       <div className="flex items-center gap-3 px-8 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
+        <button onClick={() => { if (viewType === 'requirements-edit') setLocalView('requirements-detail'); else onCloseSelf?.(); }} className="p-1 rounded hover:bg-wiki-surface2 transition-colors">
+          <ChevronLeftIcon size={18} style={{ color: 'var(--wiki-text2)' }} />
+        </button>
         <div className="flex-1 text-lg font-semibold text-wiki-text">{viewType === 'requirements-edit' ? '编辑需求' : '新建需求'}</div>
         <button onClick={viewType === 'requirements-edit' ? handleUpdate : handleCreate} className="px-4 py-2 rounded-lg text-xs font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
           {viewType === 'requirements-edit' ? '保存修改' : '提交需求'}
@@ -535,6 +595,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
       </div>
       <div className="flex-1 overflow-y-auto px-8 py-4 scrollbar-thin">
         <div className="flex flex-col gap-4">
+          <div><input className="w-full px-3 py-2 rounded-lg text-sm font-semibold text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} placeholder="需求标题" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <div className="flex gap-4">
             <div className="flex-1"><label className="text-xs text-wiki-text3 mb-2 block">模块</label><select className="w-full px-3 py-2 rounded-lg text-xs text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} value={form.module} onChange={e => setForm({ ...form, module: e.target.value })}>{modules.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
             <div className="flex-1"><label className="text-xs text-wiki-text3 mb-2 block">优先级</label><select className="w-full px-3 py-2 rounded-lg text-xs text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>{priorities.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
