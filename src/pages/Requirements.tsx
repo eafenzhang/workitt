@@ -170,16 +170,11 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [showFilter, setShowFilter] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalCount, setTotalCount] = useState(0);
-  const pageSize = 10;
   // Internal view routing — allows edit to stay in same tab and return to detail
   const [localView, setLocalView] = useState<string | null>(null);
   const [localReqId, setLocalReqId] = useState<number | null>(null);
-  // Status counts from API (unfiltered, for the status bar)
-  const [allStatusCounts, setAllStatusCounts] = useState<Record<string, number>>({ '待评估': 0, '设计中': 0, '实现中': 0, '测试中': 0, '已完成': 0 });
   const [editingReq, setEditingReq] = useState<Requirement | null>(null);
-  const [form, setForm] = useState({ title: '', desc: '', module: '用户端', priority: '中' });
+  const [form, setForm] = useState({ desc: '', module: '用户端', priority: '中' });
   const [images, setImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -197,11 +192,10 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
   const detailReqId = localReqId ?? initialTab?.reqId;
 
   useEffect(() => {
-    fetchPage(1);
+    fetchRequirements();
     const api = (window as any).electronAPI;
-    const unsub = api?.onRequirementsChanged?.(() => fetchPage(1));
+    const unsub = api?.onRequirementsChanged?.(() => fetchRequirements());
     return () => { if (unsub) unsub(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Keyboard navigation for image preview lightbox
@@ -216,42 +210,20 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     return () => window.removeEventListener('keydown', handler);
   }, [previewImage]);
 
-  // Fetch single page from server with current filters (server-side pagination)
-  const fetchPage = useCallback(async (pageNum: number) => {
-    const params = new URLSearchParams();
-    params.set('_page', String(pageNum));
-    params.set('_pageSize', String(pageSize));
-    if (search) params.set('search', search);
-    if (filterStatus !== '全部') params.set('status', filterStatus);
-    if (filterPriority !== '全部') params.set('priority', filterPriority);
-    if (filterCategory !== '全部') params.set('category', filterCategory);
-    if (filterAssignee !== '全部') params.set('assignee', filterAssignee);
-    if (dateFrom) params.set('dateFrom', dateFrom);
-    if (dateTo) params.set('dateTo', dateTo);
+  const fetchRequirements = useCallback(() => {
+    apiFetch('/api/requirements').then(r => r.json()).then(data => setRequirements(data));
+  }, []);
 
-    const res = await apiFetch(`/api/requirements?${params}`);
-    const data = await res.json();
-    if (data && data.items) {
-      setRequirements(data.items);
-      setTotalCount(data.total);
-      setCurrentPage(pageNum);
-      if (data.counts) setAllStatusCounts(data.counts);
-    } else if (Array.isArray(data)) {
-      // Fallback for old API (array) format
-      setRequirements(data);
-      setTotalCount(data.length);
-      setCurrentPage(1);
-    }
-  }, [search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo, pageSize]);
-
-  // Trigger re-fetch on filter change (reset to page 1)
-  useEffect(() => {
-    setCurrentPage(1);
-    fetchPage(1);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo]);
-
-  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const filteredRequirements = useMemo(() => requirements.filter(r => {
+    if (search) { const s = search.toLowerCase(); if (!(r.title||'').toLowerCase().includes(s) && !(r.desc||'').toLowerCase().includes(s)) return false; }
+    if (filterStatus !== '全部' && r.status !== filterStatus) return false;
+    if (filterPriority !== '全部' && r.priority !== filterPriority) return false;
+    if (filterCategory !== '全部' && r.category !== filterCategory) return false;
+    if (filterAssignee !== '全部' && r.assignee !== filterAssignee) return false;
+    if (dateFrom && (!r.createdAt || r.createdAt < dateFrom)) return false;
+    if (dateTo && (!r.createdAt || r.createdAt > dateTo)) return false;
+    return true;
+  }), [requirements, search, filterStatus, filterPriority, filterCategory, filterAssignee, dateFrom, dateTo]);
 
   const detailReq = detailReqId ? requirements.find(r => r.id === detailReqId) : null;
   // Load full contentBlocks on demand when listing excluded them
@@ -264,18 +236,18 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     }
   }, [viewType, detailReqId, detailReq?.contentBlocks]);
 
-  // Status bar — uses counts from API (unfiltered, always total)
   const statusStats = useMemo(() => {
-    const totalAll = Object.values(allStatusCounts).reduce((a, b) => a + b, 0);
+    const counts: Record<string, number> = { '待评估': 0, '设计中': 0, '实现中': 0, '测试中': 0, '已完成': 0 };
+    for (const r of requirements) { if (counts[r.status] !== undefined) counts[r.status]++; }
     return [
-      { label: `全部`, count: totalAll, color: `var(--wiki-text)`, status: `全部` },
-      { label: `待评估`, count: allStatusCounts['待评估'] || 0, color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
-      { label: `设计中`, count: allStatusCounts['设计中'] || 0, color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
-      { label: `实现中`, count: allStatusCounts['实现中'] || 0, color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
-      { label: `测试中`, count: allStatusCounts['测试中'] || 0, color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
-      { label: `已完成`, count: allStatusCounts['已完成'] || 0, color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
+      { label: `全部`, count: requirements.length, color: `var(--wiki-text)`, status: `全部` },
+      { label: `待评估`, count: counts['待评估'], color: statusConfig['待评估']?.color || '#f59e0b', status: `待评估` },
+      { label: `设计中`, count: counts['设计中'], color: statusConfig['设计中']?.color || '#6366f1', status: `设计中` },
+      { label: `实现中`, count: counts['实现中'], color: statusConfig['实现中']?.color || '#06b6d4', status: `实现中` },
+      { label: `测试中`, count: counts['测试中'], color: statusConfig['测试中']?.color || '#8b5cf6', status: `测试中` },
+      { label: `已完成`, count: counts['已完成'], color: statusConfig['已完成']?.color || '#10b981', status: `已完成` },
     ];
-  }, [allStatusCounts]);
+  }, [requirements]);
 
   // Open detail in parent tab
   const openDetail = useCallback((req: Requirement) => {
@@ -288,7 +260,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
 
   const openEdit = useCallback((req: Requirement) => {
     setEditingReq(req);
-    setForm({ title: req.title || '', desc: req.desc, module: req.module || '用户端', priority: req.priority });
+    setForm({ desc: req.desc, module: req.module || '用户端', priority: req.priority });
     setImages(req.images || []);
     setDetailBlocks(req.contentBlocks);
     setLocalView('requirements-edit');
@@ -297,8 +269,8 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
 
   // CRUD
   const handleCreate = async () => {
-    if (!form.title.trim() && !form.desc.trim()) { toast.error('请输入标题或描述'); return; }
-    const title = form.title.trim() || form.desc.substring(0, 30) || '新建需求';
+    if (!form.desc.trim()) { toast.error('请输入需求描述'); return; }
+    const title = form.desc.substring(0, 30) || '新建需求';
 
     // Step 1: save
     let newId: number | null = null;
@@ -316,7 +288,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     } catch (e) { console.error('[handleCreate] save error', e); toast.error('创建失败'); return; }
 
     // Step 2: UI cleanup
-    try { resetForm(); fetchPage(1); onCloseSelf?.(); toast.success('需求创建成功'); } catch {}
+    try { resetForm(); fetchRequirements(); onCloseSelf?.(); toast.success('需求创建成功'); } catch {}
 
     // Step 3: auto-analyze (independent of UI cleanup)
     if (newId) {
@@ -332,7 +304,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
             const aRes = await apiFetch(`/api/requirements/${newId}/analyze`, { method: 'POST' });
             const aData = aRes.data;
             if (aData.error) toast.error(aData.error);
-            else { fetchPage(1); toast.success('AI 分析完成'); }
+            else { fetchRequirements(); toast.success('AI 分析完成'); }
           }
         } catch (e) { console.error('[auto-analyze] error', e); }
       }, 600);
@@ -343,24 +315,23 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
     if (!editingReq) return;
     apiFetch(`/api/requirements/${editingReq.id}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title: form.title || editingReq.title, desc: form.desc, module: form.module, priority: form.priority, images }),
+      body: JSON.stringify({ title: editingReq.title, desc: form.desc, module: form.module, priority: form.priority, images }),
     }).then(r => r.json()).then(() => {
-      setEditingReq(null); resetForm(); fetchPage(currentPage);
-      // Return to detail view (not close the tab)
+      setEditingReq(null); resetForm(); fetchRequirements();
       setLocalView('requirements-detail');
       toast.success('需求更新成功');
     });
-  }, [editingReq, form, images, currentPage, fetchPage]);
+  }, [editingReq, form, images, fetchRequirements]);
 
   const handleDelete = (id: number) => {
     if (!confirm('确定删除？')) return;
     apiFetch(`/api/requirements/${id}`, { method: 'DELETE' }).then(() => {
       onCloseSelf?.();
-      fetchPage(1); toast.success('已删除');
+      fetchRequirements(); toast.success('已删除');
     });
   };
 
-  const resetForm = () => { setForm({ title: '', desc: '', module: '用户端', priority: '中' }); setImages([]); };
+  const resetForm = () => { setForm({ desc: '', module: '用户端', priority: '中' }); setImages([]); };
 
   const uploadImage = async (file: File) => {
     setUploading(true); const formData = new FormData(); formData.append('image', file);
@@ -463,20 +434,10 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
           ))}
         </div>
         <div className="flex flex-col gap-2.5 overflow-y-auto flex-1 px-8 pb-6" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-          {requirements.map((req) => (
+          {filteredRequirements.map((req) => (
             <ReqListItem key={req.id} req={req} onOpen={openDetail} formatDate={formatDate} />
           ))}
         </div>
-        {totalCount > pageSize && (
-          <div className="flex items-center justify-center gap-3 px-6 py-2 flex-shrink-0" style={{ borderTop: '1px solid var(--wiki-border)' }}>
-            <button onClick={() => fetchPage(currentPage - 1)} disabled={currentPage <= 1}
-              className="px-3 py-1 rounded text-xs hover:bg-wiki-surface2 disabled:opacity-30 transition-colors" style={{ color: 'var(--wiki-text2)' }}>上一页</button>
-            <span className="text-xs text-wiki-text2">{currentPage} / {totalPages}</span>
-            <button onClick={() => fetchPage(currentPage + 1)} disabled={currentPage >= totalPages}
-              className="px-3 py-1 rounded text-xs hover:bg-wiki-surface2 disabled:opacity-30 transition-colors" style={{ color: 'var(--wiki-text2)' }}>下一页</button>
-            <span className="text-xs text-wiki-text3">共 {totalCount} 条</span>
-          </div>
-        )}
       </div>
     );
   }
@@ -533,7 +494,7 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
                         ? { ...r, status: step, workflowHistory: [...(r.workflowHistory || []), { from: r.status, to: step, handler: detailReq.assignee, time: new Date().toLocaleString('zh-CN') }] }
                         : r
                     ));
-                    fetchPage(currentPage); // refresh list in background
+                    fetchRequirements();
                     toast.success(`已流转到「${step}」`);
                   } catch { toast.error('流转失败'); }
                 }}
@@ -595,7 +556,6 @@ function Requirements({ initialTab, onOpenSubTab, onCloseSelf }: Props) {
       </div>
       <div className="flex-1 overflow-y-auto px-8 py-4 scrollbar-thin">
         <div className="flex flex-col gap-4">
-          <div><input className="w-full px-3 py-2 rounded-lg text-sm font-semibold text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} placeholder="需求标题" value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} /></div>
           <div className="flex gap-4">
             <div className="flex-1"><label className="text-xs text-wiki-text3 mb-2 block">模块</label><select className="w-full px-3 py-2 rounded-lg text-xs text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} value={form.module} onChange={e => setForm({ ...form, module: e.target.value })}>{modules.map(m => <option key={m} value={m}>{m}</option>)}</select></div>
             <div className="flex-1"><label className="text-xs text-wiki-text3 mb-2 block">优先级</label><select className="w-full px-3 py-2 rounded-lg text-xs text-wiki-text outline-none" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}>{priorities.map(p => <option key={p} value={p}>{p}</option>)}</select></div>
