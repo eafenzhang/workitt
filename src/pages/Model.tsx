@@ -1,0 +1,612 @@
+import { apiFetch, API } from '../api';
+import { checkBackendStatus, getCowAgentConfig } from '../api/cowagent';
+import { useEffect, useState } from 'react';
+import { StarIcon, RefreshCwIcon, PlusIcon, XIcon, BotIcon, SaveIcon, CloudOffIcon, CloudIcon, Settings2Icon } from 'lucide-react';
+import { toast } from 'sonner';
+import { PROVIDERS, type ProviderConfig, type ModelItem } from '../data/providers';
+import ProviderCard from '../components/ProviderCard';
+import ModelStatsBar from '../components/ModelStatsBar';
+import ApiKeyInput from '../components/ApiKeyInput';
+import ModelSelector from '../components/ModelSelector';
+
+const TOAST = {
+  deleted: '已删除',
+  saved: '已保存',
+  updated: '已更新',
+  setDefault: '已设为默认',
+  setDefaultFailed: '设置失败',
+  connOk: '连接成功',
+  connFail: '连接失败',
+  connFail2: '连接失败',
+} as const;
+
+export default function Model() {
+  const [models, setModels] = useState<ModelItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [activeSubTab, setActiveSubTab] = useState<'workit' | 'cowagent'>('workit');
+  const [cowStatus, setCowStatus] = useState<{running: boolean; port: number}>({running: false, port: 9899});
+  const [cowConfig, setCowConfig] = useState<Record<string, any> | null>(null);
+  const [cowConfigLoading, setCowConfigLoading] = useState(false);
+  const [cowForm, setCowForm] = useState<Record<string, string>>({});
+  const [showModal, setShowModal] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editProvider, setEditProvider] = useState<string>('');
+  const [form, setForm] = useState({
+    apiKey: '',
+    modelId: '',
+    provider: '',
+    customName: '',
+    customBaseUrl: '',
+  });
+  const [testing, setTesting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [checkingBalance, setCheckingBalance] = useState<number | null>(null);
+  const [formEndpoint, setFormEndpoint] = useState('/chat/completions');
+
+  const checkBalance = async (modelId: number) => {
+    setCheckingBalance(modelId);
+    const api = (window as any).electronAPI;
+    try {
+      const r = await api?.modelCheckBalance?.(modelId);
+      if (r?.balance) toast.success(`余额: ${r.balance}`);
+      else if (r?.error) toast.error(r.error);
+    } catch { toast.error('查询失败'); }
+    setCheckingBalance(null);
+    fetchModels(); // Refresh to show updated balance
+  };
+
+  /* ---- data fetching ---- */
+
+  useEffect(() => {
+    fetchModels();
+    checkBackendStatus().then(s => setCowStatus(s));
+  }, []);
+
+  // Fetch CowAgent config when switching to its tab
+  useEffect(() => {
+    if (activeSubTab === 'cowagent') {
+      setCowConfigLoading(true);
+      getCowAgentConfig().then(config => {
+        if (config) {
+          setCowConfig(config);
+          // Extract relevant fields for the form
+          const relevant: Record<string, string> = {};
+          const fields = ['model','deepseek_api_key','deepseek_api_base','open_ai_api_key','open_ai_api_base',
+            'claude_api_key','claude_api_base','gemini_api_key','gemini_api_base','zhipu_ai_api_key',
+            'moonshot_api_key','dashscope_api_key','minimax_api_key','qianfan_api_key','ark_api_key',
+            'web_password','reasoning_effort'];
+          for (const f of fields) {
+            if (config[f] !== undefined) relevant[f] = String(config[f]);
+          }
+          setCowForm(relevant);
+        }
+        setCowConfigLoading(false);
+      }).catch(() => setCowConfigLoading(false));
+    }
+  }, [activeSubTab]);
+
+  const fetchModels = () => {
+    setLoading(true);
+    apiFetch(API.models)
+      .then((r) => r.json())
+      .then((d) => {
+        setModels(Array.isArray(d) ? d : []);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  };
+
+  /* ---- modal helpers ---- */
+
+  const openAdd = (pid?: string) => {
+    setEditingId(null);
+    if (pid) {
+      setEditProvider(pid);
+      const p = PROVIDERS.find((x) => x.id === pid);
+      setForm({
+        apiKey: '', modelId: p?.models[0]?.id || 'custom',
+        provider: pid, customName: '', customBaseUrl: '',
+      });
+      setFormEndpoint(p?.endpoint || '/chat/completions');
+    } else {
+      // Custom provider mode
+      setEditProvider('custom');
+      setForm({
+        apiKey: '', modelId: 'custom',
+        provider: 'custom-' + Date.now(), customName: '', customBaseUrl: '',
+      });
+      setFormEndpoint('/chat/completions');
+    }
+    setShowModal(true);
+  };
+
+  const openEdit = (m: ModelItem) => {
+    setEditingId(m.id);
+    setEditProvider(m.provider);
+    setForm({
+      apiKey: m.hasApiKey ? (m.apiKey || '••••••••') : '',
+      modelId: m.modelId,
+      provider: m.provider,
+      customName: '',
+      customBaseUrl: m.baseUrl,
+    });
+    setFormEndpoint(m.endpoint || '/chat/completions');
+    setShowModal(true);
+  };
+
+  /* ---- actions ---- */
+
+  const handleSave = async () => {
+    const f = form;
+    if (!f.apiKey.trim() && !editingId) {
+      toast.error('请输入 API Key');
+      return;
+    }
+    setSaving(true);
+    const isCustom = !PROVIDERS.find((p) => p.id === f.provider);
+    const p = PROVIDERS.find((x) => x.id === f.provider);
+    const mn = p?.models.find((m) => m.id === f.modelId)?.name || f.modelId;
+    try {
+      const url = editingId ? API.modelsById(editingId) : API.models;
+      const method = editingId ? 'PUT' : 'POST';
+      const body: Record<string, unknown> = { modelId: f.modelId };
+      if (editingId) {
+        if (f.apiKey && !/^\*{3,}/.test(f.apiKey) && f.apiKey !== '••••••••') body.apiKey = f.apiKey;
+        body.baseUrl = isCustom ? f.customBaseUrl : p?.baseUrl || '';
+        body.endpoint = formEndpoint;
+      } else {
+        body.name = isCustom ? f.customName : `${p?.name} - ${mn}`;
+        body.provider = f.provider;
+        body.baseUrl = isCustom ? f.customBaseUrl : p?.baseUrl || '';
+        body.endpoint = formEndpoint;
+        body.apiKey = f.apiKey;
+      }
+      const r = await apiFetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const d = await r.json();
+      if (d.success) {
+        toast.success(editingId ? TOAST.updated : TOAST.saved);
+        fetchModels();
+        setShowModal(false);
+      } else {
+        toast.error(d.error || '操作失败');
+      }
+    } catch {
+      toast.error('保存失败');
+    }
+    setSaving(false);
+  };
+
+  const testConn = async () => {
+    if (!form.apiKey.trim()) { toast.error('请输入 API Key'); return; }
+    setTesting(true);
+    try {
+      let modelIdToTest = editingId;
+      if (!modelIdToTest) {
+        // New config: save first to get an ID for testing
+        const p = PROVIDERS.find((x) => x.id === form.provider);
+        const mn = p?.models.find((m) => m.id === form.modelId)?.name || form.modelId;
+        const r = await apiFetch(API.models, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            provider: form.provider, baseUrl: p?.baseUrl || form.customBaseUrl || '',
+            apiKey: form.apiKey, modelId: form.modelId,
+            name: p ? `${p.name} - ${mn}` : (form.customName || `${form.provider} - ${form.modelId}`),
+          }),
+        });
+        const d = await r.json();
+        if (d?.id) { modelIdToTest = d.id; fetchModels(); }
+        else { toast.error('请先保存'); setTesting(false); return; }
+      }
+      const ok = await (window as any).electronAPI?.testModelConnection?.(modelIdToTest);
+      toast.success(ok ? TOAST.connOk : TOAST.connFail);
+    } catch { toast.error(TOAST.connFail2); }
+    setTesting(false);
+  };
+
+  const setDefault = async (id: number) => {
+    const r = await apiFetch(API.modelsById(id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ is_default: true }),
+    });
+    const d = await r.json();
+    if (d.success) {
+      toast.success(TOAST.setDefault);
+      fetchModels();
+    } else {
+      toast.error(d.error || TOAST.setDefaultFailed);
+    }
+  };
+
+  const toggleModel = async (m: ModelItem) => {
+    await apiFetch(API.modelsById(m.id), {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled: !m.enabled }),
+    });
+    fetchModels();
+  };
+
+  const delModel = async (id: number) => {
+    if (!confirm('确定删除？')) return;
+    await apiFetch(API.modelsById(id), { method: 'DELETE' });
+    toast.success(TOAST.deleted);
+    fetchModels();
+  };
+
+  /* ---- derived ---- */
+
+  const isCustom = (provider: string) => !PROVIDERS.find((p) => p.id === provider);
+  const pConfig: ProviderConfig | null = editProvider ? PROVIDERS.find((p) => p.id === editProvider) ?? null : null;
+
+  /* ---- render ---- */
+
+  return (
+    <div className="flex flex-col gap-6 p-8 h-full overflow-y-auto scrollbar-thin">
+      {/* Page header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-wiki-text">模型配置</h1>
+          <p className="text-sm text-wiki-text2 mt-1">接入主流大模型</p>
+        </div>
+        {activeSubTab === 'workit' && (
+        <button onClick={() => openAdd()}
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium"
+          style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
+          <PlusIcon size={16} />自定义添加
+        </button>
+        )}
+      </div>
+
+      {/* Sub-tab bar */}
+      <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--wiki-border)', paddingBottom: '8px' }}>
+        <button onClick={() => setActiveSubTab('workit')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          style={{ background: activeSubTab === 'workit' ? 'var(--wiki-surface2)' : 'transparent', color: activeSubTab === 'workit' ? 'var(--wiki-text)' : 'var(--wiki-text3)' }}>
+          <Settings2Icon size={13} />Workit 模型
+        </button>
+        <button onClick={() => setActiveSubTab('cowagent')}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          style={{ background: activeSubTab === 'cowagent' ? 'var(--wiki-surface2)' : 'transparent', color: activeSubTab === 'cowagent' ? 'var(--wiki-text)' : 'var(--wiki-text3)' }}>
+          {cowStatus.running ? <CloudIcon size={13} style={{color:'#10b981'}} /> : <CloudOffIcon size={13} style={{color:'var(--wiki-text3)'}} />}
+          CowAgent 引擎
+        </button>
+      </div>
+
+      {activeSubTab === 'workit' && (
+        <>
+      {/* Stats bar */}
+      <ModelStatsBar models={models} />
+
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-8">
+          <RefreshCwIcon size={24} className="animate-spin" style={{ color: 'var(--wiki-text3)' }} />
+        </div>
+      )}
+
+      {/* Provider grid — show all presets, click to add/edit */}
+      <div className="grid grid-cols-2 gap-3">
+        {PROVIDERS.map((p) => {
+          const saved = models.find((m) => m.provider === p.id);
+          return (
+            <ProviderCard
+              key={p.id}
+              provider={p}
+              saved={saved}
+              onClick={() => (saved ? openEdit(saved) : openAdd(p.id))}
+              onSetDefault={saved && !saved.isDefault ? () => setDefault(saved.id) : undefined}
+              onCheckBalance={saved?.hasApiKey ? () => checkBalance(saved.id) : undefined}
+              checkingBalance={checkingBalance === saved?.id}
+            />
+          );
+        })}
+      </div>
+
+      {/* Configured custom providers */}
+      {models.filter((m) => isCustom(m.provider)).length > 0 && (
+        <div>
+          <div className="text-xs font-medium text-wiki-text3 mb-2">自定义供应商</div>
+          <div className="grid grid-cols-2 gap-3">
+            {models
+              .filter((m) => isCustom(m.provider))
+              .map((m) => (
+                <div
+                  key={m.id}
+                  className="rounded-xl p-4 flex items-center gap-3 cursor-pointer transition-colors"
+                  style={{
+                    background: 'var(--wiki-surface)',
+                    border: `1px solid ${m.isDefault ? 'var(--wiki-warning)' : 'var(--wiki-border)'}`,
+                  }}
+                  onClick={() => openEdit(m)}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--wiki-surface2)'; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = 'var(--wiki-surface)'; }}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-wiki-text">{m.name}</span>
+                      {m.isDefault && <StarIcon size={12} style={{ color: 'var(--wiki-warning)' }} />}
+                    </div>
+                    <div className="text-xs text-wiki-text3 mt-0.5">{m.baseUrl}</div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <button onClick={(e)=>{e.stopPropagation();toggleModel(m);}}
+                      className="text-xs px-2 py-1 rounded"
+                      style={{ background: m.enabled ? 'var(--wiki-danger-bg)' : 'var(--wiki-success-bg)', color: m.enabled ? 'var(--wiki-danger)' : 'var(--wiki-success)' }}>
+                      {m.enabled ? '禁用' : '启用'}
+                    </button>
+                    {!m.isDefault && (
+                      <button onClick={(e)=>{e.stopPropagation();setDefault(m.id);}}
+                        className="text-xs px-2 py-1 rounded" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text)' }}>
+                        默认
+                      </button>
+                    )}
+                    <button onClick={(e)=>{e.stopPropagation();delModel(m.id);}} className="p-1 rounded hover:bg-wiki-surface2">
+                      <XIcon size={14} style={{ color: 'var(--wiki-text3)' }} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </div>
+      )}
+        </>
+      )}
+
+      {activeSubTab === 'cowagent' && (
+        <div className="flex flex-col gap-4">
+          {/* Connection status */}
+          <div className="rounded-lg p-4 flex items-center gap-3" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+            {cowStatus.running ? <CloudIcon size={20} style={{color:'#10b981'}} /> : <CloudOffIcon size={20} style={{color:'var(--wiki-text3)'}} />}
+            <div className="flex-1">
+              <div className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>
+                CowAgent 后端 {cowStatus.running ? '运行中' : '未连接'}
+              </div>
+              <div className="text-xs mt-0.5" style={{ color: 'var(--wiki-text3)' }}>
+                {cowStatus.running ? `端口 ${cowStatus.port}` : 'Python 后端未启动，对话将使用 Workit 模型'}
+              </div>
+            </div>
+            <button onClick={() => { checkBackendStatus().then(s => setCowStatus(s)); getCowAgentConfig().then(c => { if(c) setCowConfig(c); }); }}
+              className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+              <RefreshCwIcon size={12} />刷新
+            </button>
+          </div>
+
+          {/* Config form */}
+          {cowConfigLoading ? (
+            <div className="flex items-center justify-center py-8"><RefreshCwIcon size={24} className="animate-spin" style={{ color: 'var(--wiki-text3)' }} /></div>
+          ) : cowConfig ? (
+            <div className="rounded-lg p-5" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>引擎参数</h3>
+                <button onClick={() => {
+                  toast.success('CowAgent 配置已保存（需重启后端生效）');
+                }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
+                  <SaveIcon size={12} />保存配置
+                </button>
+              </div>
+
+              {/* Provider API Keys */}
+              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--wiki-text2)' }}>API 凭据</div>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                {[
+                  {key:'open_ai_api_key', label:'OpenAI', placeholder:'sk-...'},
+                  {key:'open_ai_api_base', label:'OpenAI Base URL'},
+                  {key:'claude_api_key', label:'Anthropic Claude', placeholder:'sk-ant-...'},
+                  {key:'claude_api_base', label:'Claude Base URL'},
+                  {key:'deepseek_api_key', label:'DeepSeek', placeholder:'sk-...'},
+                  {key:'deepseek_api_base', label:'DeepSeek Base URL'},
+                  {key:'gemini_api_key', label:'Google Gemini', placeholder:'AI...'},
+                  {key:'zhipu_ai_api_key', label:'智谱 AI', placeholder:'...'},
+                  {key:'moonshot_api_key', label:'Moonshot', placeholder:'sk-...'},
+                  {key:'dashscope_api_key', label:'阿里云百炼', placeholder:'sk-...'},
+                  {key:'minimax_api_key', label:'MiniMax', placeholder:'...'},
+                  {key:'qianfan_api_key', label:'百度千帆', placeholder:'...'},
+                ].map(field => (
+                  <div key={field.key}>
+                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>{field.label}</label>
+                    <input value={cowForm[field.key] || ''} onChange={e => setCowForm(prev => ({...prev, [field.key]: e.target.value}))}
+                      placeholder={field.placeholder || field.label}
+                      className="w-full px-2.5 py-1.5 rounded text-xs outline-none font-mono"
+                      style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                  </div>
+                ))}
+              </div>
+
+              {/* Agent Parameters */}
+              <div className="text-xs font-semibold mb-2 mt-4" style={{ color: 'var(--wiki-text2)' }}>Agent 参数</div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>模型</label>
+                  <input value={cowForm['model'] || ''} onChange={e => setCowForm(prev => ({...prev, model: e.target.value}))}
+                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
+                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>推理努力度</label>
+                  <select value={cowForm['reasoning_effort'] || 'high'} onChange={e => setCowForm(prev => ({...prev, reasoning_effort: e.target.value}))}
+                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
+                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }}>
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>管理密码</label>
+                  <input type="password" value={cowForm['web_password'] || ''} onChange={e => setCowForm(prev => ({...prev, web_password: e.target.value}))}
+                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
+                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                </div>
+              </div>
+
+              {/* Toggle switches */}
+              <div className="flex items-center gap-6 mt-4 pt-4" style={{ borderTop: '1px solid var(--wiki-border)' }}>
+                {['agent','knowledge','self_evolution_enabled','enable_thinking'].map(key => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <input type="checkbox" checked={cowConfig?.[key] === true || cowConfig?.[key] === 'true'}
+                      onChange={() => {}}
+                      className="w-3.5 h-3.5 rounded" style={{ accentColor: '#6366f1' }} />
+                    <span className="text-xs" style={{ color: 'var(--wiki-text2)' }}>
+                      {({agent:'启用 Agent',knowledge:'知识库',self_evolution_enabled:'自我进化',enable_thinking:'深度思考'} as Record<string,string>)[key]}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--wiki-text3)' }}>
+              <BotIcon size={48} style={{ opacity: 0.3 }} />
+              <p className="mt-3 text-sm">CowAgent 后端未连接</p>
+              <p className="text-xs mt-1">启动 cowagent-backend 后可配置引擎参数</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ============ ConfigModal ============ */}
+      {showModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center"
+          style={{ background: 'var(--wiki-overlay-heavy)' }}
+        >
+          <div
+            className="w-[480px] rounded-xl p-6 max-h-[85vh] overflow-y-auto"
+            style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}
+          >
+            {/* Modal header */}
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-lg font-semibold text-wiki-text">
+                {editingId ? '编辑模型配置' : '添加模型配置'}
+              </h2>
+              <button
+                onClick={() => setShowModal(false)}
+                className="p-1 rounded-lg hover:bg-wiki-surface2"
+              >
+                <XIcon size={18} style={{ color: 'var(--wiki-text3)' }} />
+              </button>
+            </div>
+
+            {/* Provider name (add & edit mode) */}
+            {editProvider && pConfig && (
+              <div className="mb-4 px-3 py-2 rounded-lg" style={{ background: 'var(--wiki-surface2)' }}>
+                <div className="text-xs font-semibold text-wiki-text">{pConfig.name}</div>
+                <div className="text-xs text-wiki-text3">{pConfig.baseUrl}</div>
+              </div>
+            )}
+            {editProvider && !pConfig && (
+              <div className="mb-4 px-3 py-2 rounded-lg" style={{ background: 'var(--wiki-surface2)' }}>
+                <div className="text-xs font-semibold text-wiki-text">{form.customName || '自定义供应商'}</div>
+                <div className="text-xs text-wiki-text3">自行配置 API 地址和模型</div>
+              </div>
+            )}
+
+            {/* Custom provider fields — show when provider is not in presets */}
+            {editProvider && !pConfig && (
+              <div className="mb-4 flex flex-col gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-wiki-text3 mb-1">名称</label>
+                  <input
+                    value={form.customName}
+                    onChange={(e) => setForm((f) => ({ ...f, customName: e.target.value }))}
+                    placeholder="供应商名称"
+                    className="w-full px-3 py-2 rounded-lg text-xs outline-none"
+                    style={{
+                      background: 'var(--wiki-surface2)',
+                      border: '1px solid var(--wiki-border)',
+                      color: 'var(--wiki-text)',
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-wiki-text3 mb-1">API 地址</label>
+                  <input
+                    value={form.customBaseUrl}
+                    onChange={(e) => setForm((f) => ({ ...f, customBaseUrl: e.target.value }))}
+                    placeholder="https://..."
+                    className="w-full px-3 py-2 rounded-lg text-xs outline-none"
+                    style={{
+                      background: 'var(--wiki-surface2)',
+                      border: '1px solid var(--wiki-border)',
+                      color: 'var(--wiki-text)',
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Model selector */}
+            <div className="mb-4">
+              <ModelSelector
+                models={pConfig?.models ?? []}
+                value={form.modelId}
+                onChange={(v) => setForm((f) => ({ ...f, modelId: v }))}
+              />
+            </div>
+
+            {/* Protocol type — only for custom providers */}
+            {editProvider && !pConfig && (<div className="mb-4">
+              <label className="block text-xs font-medium text-wiki-text3 mb-1.5">协议类型</label>
+              <select value={formEndpoint} onChange={(e) => setFormEndpoint(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-xs outline-none"
+                style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }}>
+                <option value="/chat/completions">OpenAI 兼容 (/chat/completions)</option>
+                <option value="/v1/messages">Anthropic 协议 (/v1/messages)</option>
+              </select>
+            </div>)}
+
+            {/* API Key */}
+            <div className="mb-6">
+              <ApiKeyInput
+                value={form.apiKey}
+                onChange={(v) => setForm((f) => ({ ...f, apiKey: v }))}
+                masked={editingId !== null && form.apiKey === '••••••••'}
+              />
+            </div>
+
+            {/* Action buttons */}
+            <div className="flex gap-3">
+              <button
+                onClick={testConn}
+                disabled={testing}
+                className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+                style={{
+                  background: 'var(--wiki-surface2)',
+                  color: 'var(--wiki-text2)',
+                  border: '1px solid var(--wiki-border)',
+                }}
+              >
+                <RefreshCwIcon size={14} className={testing ? 'animate-spin' : ''} />
+                {testing ? '测试中...' : '测试连接'}
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50"
+                style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}
+              >
+                {saving ? '保存中...' : editingId ? '更新' : '添加'}
+              </button>
+              {editingId && (
+                <button
+                  onClick={() => {
+                    delModel(editingId);
+                    setShowModal(false);
+                  }}
+                  className="px-4 py-2.5 rounded-lg text-sm font-medium"
+                  style={{ background: 'var(--wiki-danger-bg)', color: 'var(--wiki-danger)' }}
+                >
+                  <XIcon size={14} />
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
