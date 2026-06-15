@@ -110,15 +110,20 @@ class PythonManager {
    * Search order: sibling dir → extraResources → PATH module.
    */
   _findBackendDir() {
+    const appPath = require('electron').app.getAppPath();
     const candidates = [
-      // Sibling of Workit project root
+      // Dev: sibling of workit-ref (D:/Workitt/cowagent-backend/)
+      path.resolve(appPath, '..', 'cowagent-backend'),
+      // Dev: sibling of electron/ dir
       path.resolve(__dirname, '..', '..', 'cowagent-backend'),
       // Same directory as Workit
       path.resolve(__dirname, '..', 'cowagent-backend'),
       // Extra resources (production)
       path.resolve(process.resourcesPath || '', 'cowagent-backend'),
       // App path
-      path.resolve(require('electron').app.getAppPath(), 'cowagent-backend'),
+      path.resolve(appPath, 'cowagent-backend'),
+      // Workspace root (D:/Workitt/)
+      path.resolve(appPath, '..', '..', '..', '..', '..', 'cowagent-backend'),
     ];
 
     for (const dir of candidates) {
