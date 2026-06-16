@@ -147,14 +147,21 @@ async function downloadWithElectronNet(downloadUrl, tag) {
       });
     });
 
+    // Timeout handling via timer (net.ClientRequest doesn't support .setTimeout())
+    const timeoutTimer = setTimeout(() => {
+      clientReq.destroy();
+      log('Updater: download timeout after 300s');
+      resolve({ ok: false, error: '下载超时' });
+    }, 300000);
+
     clientReq.on('error', (e) => {
+      clearTimeout(timeoutTimer);
       log('Updater: net.request error: ' + e.message);
       resolve({ ok: false, error: e.message || '连接失败' });
     });
 
-    clientReq.setTimeout(300000, () => {
-      clientReq.destroy();
-      resolve({ ok: false, error: '下载超时' });
+    clientReq.on('close', () => {
+      clearTimeout(timeoutTimer);
     });
 
     clientReq.end();
