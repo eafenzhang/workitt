@@ -381,6 +381,63 @@ class PythonManager {
       pid: this._process ? this._process.pid : null,
     };
   }
+
+  /**
+   * Update CowAgent backend: stop, git pull, install deps, restart.
+   * Returns once the backend is ready again.
+   */
+  async update() {
+    const backendDir = this._findBackendDir();
+    if (!backendDir) throw new Error('CowAgent 后端目录未找到');
+
+    await this.stop();
+
+    const { exec } = require('child_process');
+    const execAsync = (cmd, opts) => new Promise((resolve, reject) => {
+      exec(cmd, { ...opts, timeout: 180000 }, (err, stdout, stderr) => {
+        if (err) reject(new Error(stderr || err.message));
+        else resolve(stdout);
+      });
+    });
+
+    // Git pull
+    const gitDir = path.join(backendDir, '.git');
+    if (fs.existsSync(gitDir)) {
+      log('CowAgent: pulling latest code via git pull...');
+      try {
+        await execAsync('git pull', { cwd: backendDir });
+        log('CowAgent: git pull succeeded');
+      } catch (e) {
+        log('CowAgent: git pull failed, trying Gitee mirror...');
+        try {
+          await execAsync('git remote set-url origin https://gitee.com/zhayujie/CowAgent.git', { cwd: backendDir });
+          await execAsync('git pull', { cwd: backendDir });
+        } catch (e2) {
+          log('CowAgent: git pull from Gitee also failed', e2);
+          throw new Error('Git pull 失败: ' + (e2.message || ''));
+        }
+      }
+    } else {
+      log('CowAgent: not a git repository, skipping code update. Install deps only.');
+    }
+
+    // Install / update Python dependencies
+    const reqFile = path.join(backendDir, 'requirements.txt');
+    if (fs.existsSync(reqFile)) {
+      log('CowAgent: installing Python dependencies from requirements.txt...');
+      await execAsync('python -m pip install -r "' + reqFile + '" -q', { cwd: backendDir });
+      log('CowAgent: Python dependencies installed');
+    }
+
+    // Reinstall CLI in editable mode
+    log('CowAgent: reinstalling CLI...');
+    await execAsync('python -m pip install -e "' + backendDir + '" -q', { cwd: backendDir });
+    log('CowAgent: CLI reinstalled');
+
+    // Restart backend
+    await this.start();
+    log('CowAgent: update complete');
+  }
 }
 
 // Singleton

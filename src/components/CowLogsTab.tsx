@@ -46,12 +46,11 @@ export default function CowLogsTab() {
   return (
     <div className="flex flex-col gap-3 py-4 px-4">
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <TerminalIcon size={15} style={{ color: connected ? '#10b981' : 'var(--wiki-text3)' }} />
-          <span className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>CowAgent 实时日志</span>
-          {connected && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>已连接</span>}
+        <div>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>CowAgent 实时日志</h1>
         </div>
         <div className="flex items-center gap-1.5">
+          {connected && <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>已连接</span>}
           <button onClick={() => setPaused(!paused)} className="p-1.5 rounded hover:bg-wiki-surface2" title={paused ? '继续' : '暂停'}>
             {paused ? <PlayIcon size={13} style={{ color: 'var(--wiki-text3)' }} /> : <PauseIcon size={13} style={{ color: 'var(--wiki-text3)' }} />}
           </button>

@@ -28,8 +28,15 @@ export default function CowMemoryTab() {
   };
 
   return (
-    <div className="flex gap-4 h-full py-4 px-4">
-      {/* File list */}
+    <div className="flex flex-col h-full overflow-hidden">
+      <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+        <div>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>CowAgent 记忆</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--wiki-text2)' }}>浏览和管理 CowAgent 长期记忆</p>
+        </div>
+      </div>
+      <div className="flex gap-4 flex-1 overflow-hidden px-8 pb-8">
+        {/* File list */}
       <div className="w-64 flex-shrink-0 rounded-lg overflow-hidden" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
         <div className="flex items-center justify-between px-3 py-2" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
           <span className="text-xs font-semibold" style={{ color: 'var(--wiki-text2)' }}>记忆文件</span>
@@ -74,6 +81,7 @@ export default function CowMemoryTab() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   );

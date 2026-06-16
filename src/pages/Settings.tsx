@@ -31,8 +31,32 @@ export default function Settings() {
     try { return localStorage.getItem('ai_auto_analyze') === 'true'; } catch { return true; }
   });
   const [currentVersion, setCurrentVersion] = useState('1.0.0');
+  const [updatingCowAgent, setUpdatingCowAgent] = useState(false);
 
   const api = window.electronAPI;
+
+  const handleCowAgentUpdate = useCallback(async () => {
+    if (!api?.updateCowAgent) {
+      toast.error('更新功能不可用');
+      return;
+    }
+    setUpdatingCowAgent(true);
+    try {
+      const result = await api.updateCowAgent();
+      if (result?.success) {
+        toast.success('CowAgent 后端更新成功');
+        // Refresh status
+        checkBackendStatus().then(s => setCowStatus(s));
+        getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); });
+      } else {
+        toast.error(result?.error || '更新失败');
+      }
+    } catch (e) {
+      toast.error('更新异常: ' + (e.message || ''));
+    } finally {
+      setUpdatingCowAgent(false);
+    }
+  }, []);
 
   useEffect(() => {
     api?.getVersion?.().then((v: string) => { if (v) setCurrentVersion(v); }).catch(() => {});
@@ -77,7 +101,7 @@ export default function Settings() {
               { label: '开机启动', desc: '系统启动时自动运行 Workitt', value: openAtLogin, set: (v: boolean) => { setOpenAtLogin(v); api?.setOpenAtLogin(v).then(() => toast.success('已更新')).catch(() => toast.error('保存失败')); } },
               { label: '最小化到托盘', desc: '关闭窗口时隐藏到系统托盘而非退出', value: minimizeToTray, set: (v: boolean) => { setMinimizeToTray(v); api?.setMinimizeToTray(v).then(() => toast.success('已更新')).catch(() => toast.error('保存失败')); } },
               { label: '采集浮窗', desc: '开启后显示右下角采集按钮，点击可快速采集网页内容', value: quickCollect, set: (v: boolean) => { setQuickCollect(v); try { localStorage.setItem('quick_collect_enabled', String(v)); } catch {}; window.dispatchEvent(new CustomEvent('quick-collect-toggle', { detail: { enabled: v } })); } },
-              { label: '保存后自动分析', desc: '新建需求或快速采集保存后，自动调用 AI 生成摘要和标签', value: autoAnalyze, set: (v: boolean) => { setAutoAnalyze(v); try { localStorage.setItem('ai_auto_analyze', String(v)); } catch {} } },
+              { label: 'AI自动分析', desc: '新建需求或快速采集保存后，自动调用 AI 生成摘要和标签', value: autoAnalyze, set: (v: boolean) => { setAutoAnalyze(v); try { localStorage.setItem('ai_auto_analyze', String(v)); } catch {} } },
             ].map((item, i) => (
               <div key={i} className="flex items-center justify-between">
                 <div>
@@ -174,12 +198,20 @@ export default function Settings() {
                   )}
                 </div>
               </div>
-              <button onClick={() => {
-                checkBackendStatus().then(s => setCowStatus(s));
-                getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); });
-              }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-                <RefreshCwIcon size={12} />刷新
-              </button>
+              <div className="flex items-center gap-2">
+                <button onClick={() => {
+                  checkBackendStatus().then(s => setCowStatus(s));
+                  getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); });
+                }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+                  <RefreshCwIcon size={12} />刷新
+                </button>
+                <button onClick={handleCowAgentUpdate} disabled={updatingCowAgent}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs disabled:opacity-50"
+                  style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+                  <RefreshCwIcon size={12} className={updatingCowAgent ? 'animate-spin' : ''} />
+                  {updatingCowAgent ? '更新中...' : '后端更新'}
+                </button>
+              </div>
             </div>
           </div>
         </section>

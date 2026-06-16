@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlusIcon, PlayIcon, TrashIcon, ClockIcon, ZapIcon, XIcon, ChevronDownIcon, CheckCircleIcon, XCircleIcon, LoaderIcon } from 'lucide-react';
 import { toast } from 'sonner';
+import UnifiedSidebar, { SidebarToggle, SidebarItem } from '../components/UnifiedSidebar';
 
 interface WorkflowStep {
   id: string;
@@ -83,7 +84,9 @@ export default function Workflows() {
   const [activeWf, setActiveWf] = useState<string | null>(null);
   const [executing, setExecuting] = useState<string | null>(null);
   const [inputsText, setInputsText] = useState('{}');
-  const [expandedExec, setExpandedExec] = useState<string | null>(null);
+    const [expandedExec, setExpandedExec] = useState<string | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [selectedSidebarItem, setSelectedSidebarItem] = useState<string>('all');
 
   const refresh = useCallback(() => {
     if (!api) return;
@@ -220,9 +223,51 @@ export default function Workflows() {
 
   // ── List view ──
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
-        <div className="flex-1 text-base font-semibold text-wiki-text">工作流</div>
+    <div className="flex h-full overflow-hidden">
+      <UnifiedSidebar
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen(!sidebarOpen)}
+        title="工作流"
+      >
+        <SidebarItem
+          label="全部工作流"
+          active={selectedSidebarItem === 'all'}
+          onClick={() => { setSelectedSidebarItem('all'); setActiveWf(null); }}
+        />
+        {BUILTIN_TEMPLATES.length > 0 && (
+          <>
+            <div className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">内置模板</div>
+            {BUILTIN_TEMPLATES.map(tmpl => (
+              <SidebarItem
+                key={tmpl.id}
+                label={tmpl.name}
+                active={selectedSidebarItem === tmpl.id}
+                count={tmpl.steps.length}
+                onClick={() => { openTemplate(tmpl); setSelectedSidebarItem(tmpl.id); }}
+              />
+            ))}
+          </>
+        )}
+        <div className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">我的工作流</div>
+        {workflows.length === 0 ? (
+          <div className="text-xs text-wiki-text3 px-3 py-4 text-center">暂无工作流</div>
+        ) : (
+          workflows.map(wf => (
+            <SidebarItem
+              key={wf.id}
+              label={wf.name}
+              active={selectedSidebarItem === wf.id}
+              count={wf.steps?.length}
+              onClick={() => { setSelectedSidebarItem(wf.id); loadExecutions(wf.id); }}
+            />
+          ))
+        )}
+      </UnifiedSidebar>
+
+      <div className="flex flex-col flex-1 overflow-hidden">
+        <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
+          <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
+          <div className="flex-1 text-base font-semibold text-wiki-text">工作流</div>
         <button onClick={() => { setEditing({ id: 'wf_' + Date.now(), name: '', description: '', steps: [], enabled: true }); setShowEditor(true); }}
           className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
           style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
@@ -333,5 +378,6 @@ export default function Workflows() {
         </div>
       </div>
     </div>
+  </div>
   );
 }

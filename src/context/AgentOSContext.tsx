@@ -31,7 +31,6 @@ const RequirementsPage = React.lazy(() => import('../pages/Requirements'));
 const KnowledgePage = React.lazy(() => import('../pages/Knowledge'));
 const AppEcosystemPage = React.lazy(() => import('../pages/AppEcosystem'));
 const ModelPage = React.lazy(() => import('../pages/Model'));
-const MessagesPage = React.lazy(() => import('../pages/Messages'));
 const SettingsPage = React.lazy(() => import('../pages/Settings'));
 const BrowserPage = React.lazy(() => import('../pages/Browser'));
 
@@ -55,7 +54,6 @@ export const PAGE_COMPONENT_MAP: WindowPageMap = {
   mcp: AppEcosystemPage,
   model: ModelPage,
   browser: BrowserPage,
-  messages: MessagesPage,
   settings: SettingsPage,
   workflows: WorkflowsPage,
 };
@@ -67,7 +65,7 @@ export interface AgentOSContextType {
   openWindow: (type: string, title: string, extra?: Record<string, any>) => void;
   /** Open a NEW window (always creates, no dedup) with extra params for sub-views */
   openSubWindow: (type: string, title: string, extra?: Record<string, any>) => void;
-  /** Open a NEW browser window (does not deduplicate — each call = new window) */
+  /** Open the browser — adds a tab to the existing window or creates a new one (single window with tabs) */
   openNewBrowserWindow: (initialUrl?: string) => void;
   /** Open a browser window with a specific URL */
   openBrowserWithUrl: (url: string, title?: string) => void;
@@ -248,16 +246,52 @@ export function AgentOSProvider({ children }: AgentOSProviderProps) {
     [],
   );
 
-  /** Always creates a new browser window (no deduplication) */
+  /** Open the browser — adds a tab to the existing window or creates a new one (single window with tabs) */
   const openNewBrowserWindow = useCallback((initialUrl?: string) => {
     const s = stateRef.current;
+
+    // Single-window: if a browser window already exists, add a tab to it
+    const existingBrowser = s.windows.find(w => w.type === 'browser');
+    if (existingBrowser) {
+      const newTabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const tabUrl = initialUrl || 'about:blank';
+      const tabTitle = initialUrl
+        ? initialUrl.replace(/^https?:\/\//, '').substring(0, 30)
+        : '新标签页';
+      const newTab = { id: newTabId, url: tabUrl, title: tabTitle };
+
+      const existingTabs = existingBrowser.browserTabs || [];
+      const updatedTabs = [...existingTabs, newTab];
+
+      dispatch({ type: 'SET_WINDOW_DATA', payload: {
+        id: existingBrowser.id,
+        data: {
+          browserTabs: updatedTabs,
+          activeBrowserTabId: newTabId,
+          browserTabNonce: (existingBrowser.browserTabNonce || 0) + 1,
+        },
+      }});
+      dispatch({ type: 'FOCUS_WINDOW', payload: { id: existingBrowser.id } });
+      // Promote to hot tier (handles cold-tier windows that were not rendering the React component)
+      dispatch({ type: 'SET_WINDOW_TIER', payload: { id: existingBrowser.id, tier: 'hot' } });
+      return;
+    }
+
+    // No existing browser window — create a new one
     const pos = calcCascadePosition(s.windows.length);
-    const tabIdx = s.windows.filter(w => w.type === 'browser').length + 1;
     const urlLabel = initialUrl ? ` — ${new URL(initialUrl).hostname}` : '';
+
+    const firstTabId = `tab-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const firstTab = {
+      id: firstTabId,
+      url: initialUrl || 'about:blank',
+      title: initialUrl ? initialUrl.replace(/^https?:\/\//, '').substring(0, 30) : '新标签页',
+    };
+
     const newWindow: OSWindow = {
       id: `browser-${Date.now()}`,
       type: 'browser',
-      title: `浏览器${tabIdx > 1 ? ' ' + tabIdx : ''}${urlLabel}`,
+      title: `浏览器${urlLabel}`,
       x: pos.x,
       y: pos.y,
       width: WINDOW_DEFAULT_WIDTH,
@@ -266,6 +300,8 @@ export function AgentOSProvider({ children }: AgentOSProviderProps) {
       isMinimized: false,
       isMaximized: false,
       preMaximizeRect: null,
+      browserTabs: [firstTab],
+      activeBrowserTabId: firstTabId,
       initialUrl,
     };
     dispatch({ type: 'OPEN_WINDOW', payload: { window: newWindow } });

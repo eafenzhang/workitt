@@ -287,6 +287,18 @@ function setupIPC(mainWindow, db) {
     } catch (e) { return { running: false, port: 9899, pid: null, error: e.message }; }
   });
 
+  // ── CowAgent Backend Update ─────────────────────────────────────
+  ipcMain.handle('cowagent:update', async () => {
+    try {
+      const pyMgr = getPythonManager();
+      await pyMgr.update();
+      return { success: true };
+    } catch (e) {
+      log('CowAgent update failed', e);
+      return { success: false, error: e.message || '更新失败' };
+    }
+  });
+
   // ── MCP Runtime IPC Handlers ─────────────────────────────────────
   const mcpManager = McpClientManager.getInstance();
 

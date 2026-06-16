@@ -212,18 +212,6 @@ export default function MCPTab({ hideToolbar, onRenderActions }: { hideToolbar?:
           <ServerIcon size={48} style={{ color: 'var(--wiki-text3)' }} />
           <p className="mt-4 text-sm" style={{ color: 'var(--wiki-text2)' }}>暂无 MCP 服务</p>
           <p className="mt-1 text-xs" style={{ color: 'var(--wiki-text3)' }}>添加 MCP 服务器后，AI 可以直接调用外部工具和服务</p>
-          <div className="flex items-center gap-2 mt-4">
-            <button onClick={() => setShowAdd(true)}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-lg text-xs font-medium"
-              style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
-              <ServerIcon size={14} />添加 MCP 服务器
-            </button>
-            <button onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 px-5 py-2 rounded-lg text-xs font-medium"
-              style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text2)' }}>
-              <UploadIcon size={14} />导入 JSON
-            </button>
-          </div>
         </div>
       )}
 

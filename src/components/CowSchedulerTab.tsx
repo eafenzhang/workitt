@@ -38,8 +38,8 @@ export default function CowSchedulerTab() {
     <div className="flex flex-col gap-4 py-4 px-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>定时任务</h3>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--wiki-text3)' }}>管理 CowAgent 定时任务</p>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>定时任务</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--wiki-text2)' }}>管理 CowAgent 定时任务</p>
         </div>
         <div className="flex items-center gap-2">
           <button onClick={fetchTasks} disabled={loading}

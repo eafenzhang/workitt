@@ -62,8 +62,8 @@ export default function CowChannelsTab() {
     <div className="flex flex-col gap-4 py-4 px-4">
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>IM 通道</h3>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--wiki-text3)' }}>连接微信、飞书、Telegram 等 IM 平台</p>
+          <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>IM 通道</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--wiki-text2)' }}>连接微信、飞书、Telegram 等 IM 平台</p>
         </div>
         <button onClick={fetchChannels} disabled={loading}
           className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>

@@ -9,18 +9,17 @@ interface SidebarProps {
 }
 
 const navItems = [
-  { id: 'home', label: `首页`, icon: Bot, color: 'var(--wiki-text)', path: '/' },
+  { id: 'home', label: `会话`, icon: Bot, color: 'var(--wiki-text)', path: '/' },
   { id: 'requirements', label: `采集库`, icon: SparklesIcon, color: 'var(--wiki-text)', path: '/requirements' },
   { id: 'knowledge', label: `知识库`, icon: DatabaseIcon, color: 'var(--wiki-text)', path: '/knowledge' },
   { id: 'design-studio', label: `设计稿`, icon: PaletteIcon, color: '#6366f1', path: '/design-studio' },
   { id: 'model', label: `模型配置`, icon: CpuIcon, color: 'var(--wiki-warning)', path: '/model' },
-  { id: 'mcp', label: `应用生态`, icon: PackageIcon, color: 'var(--wiki-danger)', path: '/mcp' },
+  { id: 'mcp', label: `工具`, icon: PackageIcon, color: 'var(--wiki-danger)', path: '/mcp' },
   { id: 'channels', label: `IM通道`, icon: MessageSquareIcon, color: '#14b8a6', path: '/channels' },
   { id: 'memory', label: `记忆`, icon: BrainCircuitIcon, color: '#8b5cf6', path: '/memory' },
   { id: 'scheduler', label: `定时任务`, icon: ClockIcon, color: '#f59e0b', path: '/scheduler' },
   { id: 'workflows', label: `工作流`, icon: WorkflowIcon, color: '#6366f1', path: '/workflows' },
   { id: 'browser', label: `浏览器`, icon: GlobeIcon, color: 'var(--wiki-info)', path: '/browser' },
-  { id: 'messages', label: `消息中心`, icon: MessageSquareIcon, color: '#ec4899', path: '/messages' },
   { id: 'logs', label: `日志`, icon: TerminalIcon, color: '#64748b', path: '/logs' },
 ];
 

@@ -1,7 +1,6 @@
 import { apiFetch, API } from '../api';
-import { checkBackendStatus, getCowAgentConfig } from '../api/cowagent';
 import { useEffect, useState } from 'react';
-import { StarIcon, RefreshCwIcon, PlusIcon, XIcon, BotIcon, SaveIcon, CloudOffIcon, CloudIcon, Settings2Icon } from 'lucide-react';
+import { StarIcon, RefreshCwIcon, PlusIcon, XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { PROVIDERS, type ProviderConfig, type ModelItem } from '../data/providers';
 import ProviderCard from '../components/ProviderCard';
@@ -23,11 +22,6 @@ const TOAST = {
 export default function Model() {
   const [models, setModels] = useState<ModelItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [activeSubTab, setActiveSubTab] = useState<'workit' | 'cowagent'>('workit');
-  const [cowStatus, setCowStatus] = useState<{running: boolean; port: number}>({running: false, port: 9899});
-  const [cowConfig, setCowConfig] = useState<Record<string, any> | null>(null);
-  const [cowConfigLoading, setCowConfigLoading] = useState(false);
-  const [cowForm, setCowForm] = useState<Record<string, string>>({});
   const [showModal, setShowModal] = useState(false);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editProvider, setEditProvider] = useState<string>('');
@@ -59,31 +53,8 @@ export default function Model() {
 
   useEffect(() => {
     fetchModels();
-    checkBackendStatus().then(s => setCowStatus(s));
   }, []);
 
-  // Fetch CowAgent config when switching to its tab
-  useEffect(() => {
-    if (activeSubTab === 'cowagent') {
-      setCowConfigLoading(true);
-      getCowAgentConfig().then(config => {
-        if (config) {
-          setCowConfig(config);
-          // Extract relevant fields for the form
-          const relevant: Record<string, string> = {};
-          const fields = ['model','deepseek_api_key','deepseek_api_base','open_ai_api_key','open_ai_api_base',
-            'claude_api_key','claude_api_base','gemini_api_key','gemini_api_base','zhipu_ai_api_key',
-            'moonshot_api_key','dashscope_api_key','minimax_api_key','qianfan_api_key','ark_api_key',
-            'web_password','reasoning_effort'];
-          for (const f of fields) {
-            if (config[f] !== undefined) relevant[f] = String(config[f]);
-          }
-          setCowForm(relevant);
-        }
-        setCowConfigLoading(false);
-      }).catch(() => setCowConfigLoading(false));
-    }
-  }, [activeSubTab]);
 
   const fetchModels = () => {
     setLoading(true);
@@ -253,32 +224,13 @@ export default function Model() {
           <h1 className="text-xl font-semibold text-wiki-text">模型配置</h1>
           <p className="text-sm text-wiki-text2 mt-1">接入主流大模型</p>
         </div>
-        {activeSubTab === 'workit' && (
         <button onClick={() => openAdd()}
           className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium"
           style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
           <PlusIcon size={16} />自定义添加
         </button>
-        )}
       </div>
 
-      {/* Sub-tab bar */}
-      <div className="flex items-center gap-1" style={{ borderBottom: '1px solid var(--wiki-border)', paddingBottom: '8px' }}>
-        <button onClick={() => setActiveSubTab('workit')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          style={{ background: activeSubTab === 'workit' ? 'var(--wiki-surface2)' : 'transparent', color: activeSubTab === 'workit' ? 'var(--wiki-text)' : 'var(--wiki-text3)' }}>
-          <Settings2Icon size={13} />Workit 模型
-        </button>
-        <button onClick={() => setActiveSubTab('cowagent')}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
-          style={{ background: activeSubTab === 'cowagent' ? 'var(--wiki-surface2)' : 'transparent', color: activeSubTab === 'cowagent' ? 'var(--wiki-text)' : 'var(--wiki-text3)' }}>
-          {cowStatus.running ? <CloudIcon size={13} style={{color:'#10b981'}} /> : <CloudOffIcon size={13} style={{color:'var(--wiki-text3)'}} />}
-          CowAgent 引擎
-        </button>
-      </div>
-
-      {activeSubTab === 'workit' && (
-        <>
       {/* Stats bar */}
       <ModelStatsBar models={models} />
 
@@ -352,119 +304,6 @@ export default function Model() {
                 </div>
               ))}
           </div>
-        </div>
-      )}
-        </>
-      )}
-
-      {activeSubTab === 'cowagent' && (
-        <div className="flex flex-col gap-4">
-          {/* Connection status */}
-          <div className="rounded-lg p-4 flex items-center gap-3" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-            {cowStatus.running ? <CloudIcon size={20} style={{color:'#10b981'}} /> : <CloudOffIcon size={20} style={{color:'var(--wiki-text3)'}} />}
-            <div className="flex-1">
-              <div className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>
-                CowAgent 后端 {cowStatus.running ? '运行中' : '未连接'}
-              </div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--wiki-text3)' }}>
-                {cowStatus.running ? `端口 ${cowStatus.port}` : 'Python 后端未启动，对话将使用 Workit 模型'}
-              </div>
-            </div>
-            <button onClick={() => { checkBackendStatus().then(s => setCowStatus(s)); getCowAgentConfig().then(c => { if(c) setCowConfig(c); }); }}
-              className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-              <RefreshCwIcon size={12} />刷新
-            </button>
-          </div>
-
-          {/* Config form */}
-          {cowConfigLoading ? (
-            <div className="flex items-center justify-center py-8"><RefreshCwIcon size={24} className="animate-spin" style={{ color: 'var(--wiki-text3)' }} /></div>
-          ) : cowConfig ? (
-            <div className="rounded-lg p-5" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>引擎参数</h3>
-                <button onClick={() => {
-                  toast.success('CowAgent 配置已保存（需重启后端生效）');
-                }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
-                  <SaveIcon size={12} />保存配置
-                </button>
-              </div>
-
-              {/* Provider API Keys */}
-              <div className="text-xs font-semibold mb-2" style={{ color: 'var(--wiki-text2)' }}>API 凭据</div>
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                {[
-                  {key:'open_ai_api_key', label:'OpenAI', placeholder:'sk-...'},
-                  {key:'open_ai_api_base', label:'OpenAI Base URL'},
-                  {key:'claude_api_key', label:'Anthropic Claude', placeholder:'sk-ant-...'},
-                  {key:'claude_api_base', label:'Claude Base URL'},
-                  {key:'deepseek_api_key', label:'DeepSeek', placeholder:'sk-...'},
-                  {key:'deepseek_api_base', label:'DeepSeek Base URL'},
-                  {key:'gemini_api_key', label:'Google Gemini', placeholder:'AI...'},
-                  {key:'zhipu_ai_api_key', label:'智谱 AI', placeholder:'...'},
-                  {key:'moonshot_api_key', label:'Moonshot', placeholder:'sk-...'},
-                  {key:'dashscope_api_key', label:'阿里云百炼', placeholder:'sk-...'},
-                  {key:'minimax_api_key', label:'MiniMax', placeholder:'...'},
-                  {key:'qianfan_api_key', label:'百度千帆', placeholder:'...'},
-                ].map(field => (
-                  <div key={field.key}>
-                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>{field.label}</label>
-                    <input value={cowForm[field.key] || ''} onChange={e => setCowForm(prev => ({...prev, [field.key]: e.target.value}))}
-                      placeholder={field.placeholder || field.label}
-                      className="w-full px-2.5 py-1.5 rounded text-xs outline-none font-mono"
-                      style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
-                  </div>
-                ))}
-              </div>
-
-              {/* Agent Parameters */}
-              <div className="text-xs font-semibold mb-2 mt-4" style={{ color: 'var(--wiki-text2)' }}>Agent 参数</div>
-              <div className="grid grid-cols-3 gap-3">
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>模型</label>
-                  <input value={cowForm['model'] || ''} onChange={e => setCowForm(prev => ({...prev, model: e.target.value}))}
-                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
-                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>推理努力度</label>
-                  <select value={cowForm['reasoning_effort'] || 'high'} onChange={e => setCowForm(prev => ({...prev, reasoning_effort: e.target.value}))}
-                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
-                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }}>
-                    <option value="high">High</option>
-                    <option value="medium">Medium</option>
-                    <option value="low">Low</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>管理密码</label>
-                  <input type="password" value={cowForm['web_password'] || ''} onChange={e => setCowForm(prev => ({...prev, web_password: e.target.value}))}
-                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
-                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
-                </div>
-              </div>
-
-              {/* Toggle switches */}
-              <div className="flex items-center gap-6 mt-4 pt-4" style={{ borderTop: '1px solid var(--wiki-border)' }}>
-                {['agent','knowledge','self_evolution_enabled','enable_thinking'].map(key => (
-                  <label key={key} className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" checked={cowConfig?.[key] === true || cowConfig?.[key] === 'true'}
-                      onChange={() => {}}
-                      className="w-3.5 h-3.5 rounded" style={{ accentColor: '#6366f1' }} />
-                    <span className="text-xs" style={{ color: 'var(--wiki-text2)' }}>
-                      {({agent:'启用 Agent',knowledge:'知识库',self_evolution_enabled:'自我进化',enable_thinking:'深度思考'} as Record<string,string>)[key]}
-                    </span>
-                  </label>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center justify-center py-16" style={{ color: 'var(--wiki-text3)' }}>
-              <BotIcon size={48} style={{ opacity: 0.3 }} />
-              <p className="mt-3 text-sm">CowAgent 后端未连接</p>
-              <p className="text-xs mt-1">启动 cowagent-backend 后可配置引擎参数</p>
-            </div>
-          )}
         </div>
       )}
 

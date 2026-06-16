@@ -1,5 +1,5 @@
 import { useState, useEffect, type ReactNode } from 'react';
-import { PanelLeftCloseIcon, PanelLeftOpenIcon, GlobeIcon, Maximize2Icon, Minimize2Icon } from 'lucide-react';
+import { PanelLeftCloseIcon, PanelLeftOpenIcon, Maximize2Icon, Minimize2Icon } from 'lucide-react';
 import OSToggleButton from './agent-os/OSToggleButton';
 
 function getAPI(): ElectronAPI | undefined {
@@ -10,14 +10,13 @@ interface Props {
   children?: ReactNode;
   sidebarCollapsed?: boolean;
   onToggleSidebar?: () => void;
-  onOpenBrowser?: () => void;
   /** OS mode toggle callback — renders the toggle button when provided */
   onToggleOSMode?: () => void;
   /** Current OS mode state — controls toggle button icon */
   isOSMode?: boolean;
 }
 
-export default function TitleBar({ children, sidebarCollapsed = false, onToggleSidebar, onOpenBrowser, onToggleOSMode, isOSMode = false }: Props) {
+export default function TitleBar({ children, sidebarCollapsed = false, onToggleSidebar, onToggleOSMode, isOSMode = false }: Props) {
   const [maximized, setMaximized] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
 
@@ -63,17 +62,6 @@ export default function TitleBar({ children, sidebarCollapsed = false, onToggleS
 
       {/* Window controls */}
       <div className="flex h-full flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as any}>
-        {/* Browser button — hidden in OS mode */}
-        {!isOSMode && (
-        <button
-          onClick={() => onOpenBrowser?.()}
-          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors focus:outline-none"
-          title="内置浏览器"
-          aria-label="内置浏览器"
-        >
-          <GlobeIcon size={15} style={{ color: 'var(--wiki-text2)' }} />
-        </button>
-        )}
         {/* OS mode toggle button */}
         {onToggleOSMode && (
           <OSToggleButton isOSMode={isOSMode} onToggle={onToggleOSMode} />

@@ -52,6 +52,8 @@ export interface OSWindow {
   /** Browser window tab state — persisted across sessions */
   browserTabs?: { id: string; url: string; title: string }[];
   activeBrowserTabId?: string;
+  /** Monotonically increasing counter for external tab additions (avoids sync loops) */
+  browserTabNonce?: number;
 }
 
 /** A single Dock bar icon entry */

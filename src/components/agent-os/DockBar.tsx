@@ -10,18 +10,17 @@ import { getIconStyle, getIconsForStyle, type IconStyle } from './DockIcons';
 function getDockItems(style: IconStyle): (DockItem & { color: string })[] {
   const icons = getIconsForStyle(style);
   return [
-    { id: 'home', label: '首页', icon: icons['home'], type: 'home', color: '#6366f1' },
+    { id: 'home', label: '会话', icon: icons['home'], type: 'home', color: '#6366f1' },
     { id: 'requirements', label: '采集库', icon: icons['requirements'], type: 'requirements', color: '#f59e0b' },
     { id: 'knowledge', label: '知识库', icon: icons['knowledge'], type: 'knowledge', color: '#10b981' },
     { id: 'design-studio', label: '设计稿', icon: icons['design-studio'], type: 'design-studio', color: '#ec4899' },
     { id: 'model', label: '模型配置', icon: icons['model'], type: 'model', color: '#ef4444' },
-    { id: 'mcp', label: '应用生态', icon: icons['mcp'], type: 'mcp', color: '#06b6d4' },
+    { id: 'mcp', label: '工具', icon: icons['mcp'], type: 'mcp', color: '#06b6d4' },
     { id: 'channels', label: 'IM通道', icon: icons['channels'], type: 'channels', color: '#14b8a6' },
     { id: 'memory', label: '记忆', icon: icons['memory'], type: 'memory', color: '#8b5cf6' },
     { id: 'scheduler', label: '定时任务', icon: icons['scheduler'], type: 'scheduler', color: '#f59e0b' },
     { id: 'workflows', label: '工作流', icon: icons['workflows'], type: 'workflows', color: '#6366f1' },
     { id: 'browser', label: '浏览器', icon: icons['browser'], type: 'browser', color: '#3b82f6' },
-    { id: 'messages', label: '消息中心', icon: icons['messages'], type: 'messages', color: '#14b8a6' },
     { id: 'logs', label: '日志', icon: icons['logs'], type: 'logs', color: '#64748b' },
     { id: 'settings', label: '系统设置', icon: icons['settings'], type: 'settings', color: '#64748b' },
   ];
@@ -275,96 +274,6 @@ export default function DockBar({
         ))}
       </div>
 
-      {/* ── 最近任务 - fullscreen semi-transparent overlay ── */}
-      {taskManagerOpen && (
-        <div
-          className="fixed inset-0 z-[99999] flex flex-col"
-          style={{
-            background: 'rgba(0,0,0,0.62)',
-            backdropFilter: 'blur(16px) saturate(120%)',
-            WebkitBackdropFilter: 'blur(16px) saturate(120%)',
-            opacity: taskManagerAnim ? 1 : 0,
-            transition: 'opacity 0.22s ease-out',
-          }}
-          onClick={closeTaskManager}
-        >
-          {/* Title */}
-          <div className="flex-shrink-0 pt-12 pb-4 text-center" onClick={e => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.9)' }}>
-              最近任务
-            </h2>
-          </div>
-
-          {/* Scrollable grid */}
-          <div
-            className="flex-1 overflow-y-auto px-8 pb-4 scrollbar-thin"
-          >
-            {runningWindows.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-20">
-                <LayersIcon size={48} style={{ color: 'rgba(255,255,255,0.2)' }} />
-                <span className="mt-4 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>无运行中应用</span>
-              </div>
-            ) : (
-              <div className="w-full max-w-[840px] mx-auto grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-                {runningWindows.map(w => {
-                  const item = DOCK_ITEMS.find(d => d.type === w.type);
-                  const Icon = item?.icon || GlobeIcon;
-                  return (
-                    <button
-                      key={w.id}
-                      onClick={() => { focusWindow(w.id); closeTaskManager(); }}
-                      className="group flex flex-col gap-3 p-4 rounded-xl text-left transition-all duration-200 hover:scale-[1.02]"
-                      style={{
-                        background: 'rgba(255,255,255,0.06)',
-                        border: '1px solid rgba(255,255,255,0.08)',
-                      }}
-                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.14)'; }}
-                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)'; }}
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
-                          style={{ background: item?.color + '25' || 'rgba(255,255,255,0.08)' }}>
-                          <Icon size={18} style={{ color: item?.color || 'rgba(255,255,255,0.7)' }} />
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{w.title}</div>
-                          <div className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{item?.label || w.type}</div>
-                        </div>
-                      </div>
-                      <div className="w-full h-20 rounded-lg overflow-hidden" style={{
-                        background: `linear-gradient(135deg, ${item?.color || '#3b82f6'}20, ${item?.color || '#6366f1'}0a)`,
-                        border: '1px solid rgba(255,255,255,0.04)',
-                      }}>
-                        <div className="flex items-center justify-center h-full">
-                          <Icon size={28} style={{ color: 'rgba(255,255,255,0.12)' }} />
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-
-          {/* Sticky clear-all button */}
-          {runningWindows.length > 0 && (
-            <div className="flex-shrink-0 flex justify-center pb-10 pt-2" onClick={e => e.stopPropagation()}>
-              <button
-                onClick={() => { runningWindows.forEach(w => closeWindow(w.id)); closeTaskManager(); }}
-                className="px-5 py-2 rounded-full text-xs font-medium transition-all duration-200 hover:scale-105"
-                style={{
-                  background: 'rgba(239,68,68,0.15)',
-                  color: 'rgba(252,165,165,0.9)',
-                  border: '1px solid rgba(239,68,68,0.25)',
-                }}
-              >
-                一键清空 ({runningWindows.length})
-              </button>
-            </div>
-          )}
-        </div>
-      )}
-
       {/* ── Browser window list modal (Finder-style centered) ── */}
       {browserModalOpen && (
         <div
@@ -524,7 +433,97 @@ export default function DockBar({
           </div>
         </div>
       )}
+
     </div>
+      {/* ── 最近任务 - fullscreen semi-transparent overlay ── */}
+      {taskManagerOpen && (
+        <div
+          className="fixed inset-0 z-[99999] flex flex-col"
+          style={{
+            background: 'rgba(0,0,0,0.62)',
+            backdropFilter: 'blur(16px) saturate(120%)',
+            WebkitBackdropFilter: 'blur(16px) saturate(120%)',
+            opacity: taskManagerAnim ? 1 : 0,
+            transition: 'opacity 0.22s ease-out',
+          }}
+          onClick={closeTaskManager}
+        >
+          {/* Title */}
+          <div className="flex-shrink-0 pt-12 pb-4 text-center" onClick={e => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold tracking-wide" style={{ color: 'rgba(255,255,255,0.9)' }}>
+              最近任务
+            </h2>
+          </div>
+
+          {/* Scrollable grid */}
+          <div
+            className="flex-1 overflow-y-auto px-8 pb-4 scrollbar-thin"
+          >
+            {runningWindows.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20">
+                <LayersIcon size={48} style={{ color: 'rgba(255,255,255,0.2)' }} />
+                <span className="mt-4 text-sm" style={{ color: 'rgba(255,255,255,0.4)' }}>无运行中应用</span>
+              </div>
+            ) : (
+              <div className="w-full max-w-[840px] mx-auto grid gap-4" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
+                {runningWindows.map(w => {
+                  const item = DOCK_ITEMS.find(d => d.type === w.type);
+                  const Icon = item?.icon || GlobeIcon;
+                  return (
+                    <button
+                      key={w.id}
+                      onClick={() => { focusWindow(w.id); closeTaskManager(); }}
+                      className="group flex flex-col gap-3 p-4 rounded-xl text-left transition-all duration-200 hover:scale-[1.02]"
+                      style={{
+                        background: 'rgba(255,255,255,0.06)',
+                        border: '1px solid rgba(255,255,255,0.08)',
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.1)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.14)'; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,255,255,0.06)'; (e.currentTarget as HTMLElement).style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0"
+                          style={{ background: item?.color + '25' || 'rgba(255,255,255,0.08)' }}>
+                          <Icon size={18} style={{ color: item?.color || 'rgba(255,255,255,0.7)' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium truncate" style={{ color: 'rgba(255,255,255,0.9)' }}>{w.title}</div>
+                          <div className="text-xs mt-0.5 truncate" style={{ color: 'rgba(255,255,255,0.4)' }}>{item?.label || w.type}</div>
+                        </div>
+                      </div>
+                      <div className="w-full h-20 rounded-lg overflow-hidden" style={{
+                        background: `linear-gradient(135deg, ${item?.color || '#3b82f6'}20, ${item?.color || '#6366f1'}0a)`,
+                        border: '1px solid rgba(255,255,255,0.04)',
+                      }}>
+                        <div className="flex items-center justify-center h-full">
+                          <Icon size={28} style={{ color: 'rgba(255,255,255,0.12)' }} />
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Sticky clear-all button */}
+          {runningWindows.length > 0 && (
+            <div className="flex-shrink-0 flex justify-center pb-10 pt-2" onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => { runningWindows.forEach(w => closeWindow(w.id)); closeTaskManager(); }}
+                className="px-5 py-2 rounded-full text-xs font-medium transition-all duration-200 hover:scale-105"
+                style={{
+                  background: 'rgba(239,68,68,0.15)',
+                  color: 'rgba(252,165,165,0.9)',
+                  border: '1px solid rgba(239,68,68,0.25)',
+                }}
+              >
+                一键清空 ({runningWindows.length})
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
 }

@@ -125,7 +125,7 @@ export default function UpdateDialog() {
         opacity: animating ? 1 : 0,
         transition: 'opacity 0.25s ease-out',
       }}
-      onClick={phase !== 'downloading' ? handleClose : undefined}
+      onClick={handleClose}
     >
       <div
         className="rounded-2xl overflow-hidden w-[420px] max-w-[95vw] flex flex-col"
@@ -151,11 +151,9 @@ export default function UpdateDialog() {
               <div className="text-xs" style={{ color: 'var(--wiki-text3)' }}>软件更新</div>
             </div>
           </div>
-          {(phase !== 'downloading') && (
-            <button onClick={handleClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-wiki-surface2 transition-colors">
-              <XIcon size={14} style={{ color: 'var(--wiki-text3)' }} />
-            </button>
-          )}
+          <button onClick={handleClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-wiki-surface2 transition-colors">
+            <XIcon size={14} style={{ color: 'var(--wiki-text3)' }} />
+          </button>
         </div>
 
         {/* Body */}

@@ -141,6 +141,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.on('browser:new-window', handler);
     return () => ipcRenderer.removeListener('browser:new-window', handler);
   },
-  // ── CowAgent Backend Status ──
+  // ── CowAgent Backend Status & Update ──
   getBackendStatus: () => ipcRenderer.invoke('backend:status'),
+  updateCowAgent: () => ipcRenderer.invoke('cowagent:update'),
 });

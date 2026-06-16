@@ -52,6 +52,11 @@ export default function Browser({ initialUrl, windowId, onUrlChange, onTitleChan
     const win = state.windows.find(w => w.id === windowId);
     return win?.activeBrowserTabId || tabs[0]?.id || '';
   });
+  // Track external tab additions (e.g., from openNewBrowserWindow)
+  const [externalTabNonce, setExternalTabNonce] = useState(() => {
+    const win = state.windows.find(w => w.id === windowId);
+    return win?.browserTabNonce ?? 0;
+  });
 
   const activeTab = tabs.find(t => t.id === activeTabId) || tabs[0] || { id: '', url: '', title: '新标签页' };
   const url = activeTab.url || '';
@@ -71,6 +76,18 @@ export default function Browser({ initialUrl, windowId, onUrlChange, onTitleChan
     }, 500);
     return () => clearTimeout(timer);
   }, [tabs, activeTabId, windowId, setWindowData]);
+
+  // Sync tabs from window data when externally modified (e.g., openNewBrowserWindow adds a tab)
+  useEffect(() => {
+    const win = state.windows.find(w => w.id === windowId);
+    const nonce = win?.browserTabNonce ?? 0;
+    if (nonce > externalTabNonce && win?.browserTabs) {
+      setTabs(win.browserTabs);
+      if (win.activeBrowserTabId) setActiveTabId(win.activeBrowserTabId);
+      setExternalTabNonce(nonce);
+    }
+  }, [windowId, state.windows, externalTabNonce]);
+
   const wvContainerRef = useRef<HTMLDivElement>(null);
   const webviewRef = useRef<any>(null);
   const activeTabRef = useRef(activeTab); activeTabRef.current = activeTab;

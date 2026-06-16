@@ -7,7 +7,7 @@ import AgentOSDesktop from '../components/agent-os/AgentOSDesktop';
 
 /** Extracted base style for tab bar buttons */
 const TAB_STYLE: React.CSSProperties = {
-  maxWidth: '160px',
+  maxWidth: '120px',
   fontSize: '13px',
   WebkitAppRegion: 'no-drag',
 };
@@ -19,7 +19,6 @@ const Knowledge = lazy(() => import('./Knowledge'));
 const AppEcosystem = lazy(() => import('./AppEcosystem'));
 const Model = lazy(() => import('./Model'));
 const Browser = lazy(() => import('./Browser'));
-const Messages = lazy(() => import('./Messages'));
 const Settings = lazy(() => import('./Settings'));
 const DesignStudio = lazy(() => import('./DesignStudio'));
 const Workflows = lazy(() => import('./Workflows'));
@@ -50,18 +49,17 @@ interface GlobalTab {
 const MAX_TABS = 10;
 
 const MENU_MAP: Record<string, { type: string; title: string }> = {
-  home: { type: 'home', title: '首页' },
+  home: { type: 'home', title: '会话' },
   requirements: { type: 'requirements', title: '采集库' },
   knowledge: { type: 'knowledge', title: '知识库' },
   'design-studio': { type: 'design-studio', title: '设计稿' },
   model: { type: 'model', title: '模型配置' },
-  mcp: { type: 'mcp', title: '应用生态' },
+  mcp: { type: 'mcp', title: '工具' },
   channels: { type: 'channels', title: 'IM通道' },
   memory: { type: 'memory', title: '记忆' },
   scheduler: { type: 'scheduler', title: '定时任务' },
   workflows: { type: 'workflows', title: '工作流' },
   browser: { type: 'browser', title: '浏览器' },
-  messages: { type: 'messages', title: '消息中心' },
   logs: { type: 'logs', title: '日志' },
   settings: { type: 'settings', title: '系统设置' },
 };
@@ -278,9 +276,6 @@ export default function Index() {
         return <Lazy><CowLogsTab /></Lazy>;
       case 'model':
         return <Lazy><Model /></Lazy>;
-      case 'messages':
-        return <Lazy><Messages /></Lazy>;
-      case 'browser':
         return null; // browser tabs rendered separately below (kept alive with display:none)
       case 'settings':
         return <Lazy><Settings /></Lazy>;
@@ -299,7 +294,6 @@ export default function Index() {
       <TitleBar
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={onToggleSidebar}
-        onOpenBrowser={() => onOpenBrowser()}
         isOSMode={isOSMode}
         onToggleOSMode={toggleOSMode}
       >
@@ -322,7 +316,6 @@ export default function Index() {
                              activeTab?.type === 'mcp' ? 'mcp' :
                              activeTab?.type === 'model' ? 'model' :
                              activeTab?.type === 'browser' ? 'browser' :
-                             activeTab?.type === 'messages' ? 'messages' :
                              activeTab?.type === 'channels' ? 'channels' :
 	                             activeTab?.type === 'memory' ? 'memory' :
 	                             activeTab?.type === 'scheduler' ? 'scheduler' :
