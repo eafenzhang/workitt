@@ -1,11 +1,14 @@
-name: Build Windows App
+name: Build & Release
 
 on:
   push:
     branches: [master]
-    tags:
-      - 'v*'
   workflow_dispatch:
+
+# Prevent multiple runs from racing on the same version bump
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -17,15 +20,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
           lfs: false
-
-      - name: Clean test data
-        shell: bash
-        run: |
-          rm -rf backend/data/ backend/api_*.txt backend/api_*.json backend/test_* backend/*.sh
-          echo "Test data cleared"
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -39,37 +35,54 @@ jobs:
       - name: Rebuild native modules
         run: npx @electron/rebuild
 
-      - name: Bump version
+      - name: Bump patch version
         shell: bash
-        run: node -e "const p=require('./package.json');const v=p.version.split('.');v[2]=String(process.env.GITHUB_RUN_NUMBER).slice(-2);p.version=v.join('.');require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n')"
-
-      - name: Get version
+        run: |
+          OLD=$(node -p "require('./package.json').version")
+          node -e "
+            const p=require('./package.json');
+            const v=p.version.split('.');
+            v[2]=String(Number(v[2])+1);
+            p.version=v.join('.');
+            require('fs').writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
+          "
+          NEW=$(node -p "require('./package.json').version")
+          echo "Version bumped: $OLD → $NEW"
+          echo "version=$NEW" >> $GITHUB_OUTPUT
         id: version
-        shell: bash
-        run: echo "version=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
 
       - name: Build frontend
         run: npm run build
-
-      - name: Clear winCodeSign cache
-        shell: bash
-        run: rm -rf ~/AppData/Local/electron-builder/Cache/winCodeSign 2>/dev/null; echo "Cache cleared"
 
       - name: Build installer
         run: npx electron-builder --win --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Release
+      - name: Commit and tag version bump
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}" || true
+          git tag -f v${{ steps.version.outputs.version }}
+
+      - name: Create Release
         uses: softprops/action-gh-release@v2.6.2
         if: success()
         with:
           tag_name: v${{ steps.version.outputs.version }}
           name: Workitt v${{ steps.version.outputs.version }}
+          body: |
+            ## Workitt v${{ steps.version.outputs.version }}
+
+            Workitt 智能体工作台自动构建。
           draft: false
           prerelease: false
           files: |
             release/*.exe
             release/*.yml
+          fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
