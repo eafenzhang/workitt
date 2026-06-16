@@ -45,7 +45,62 @@ async function checkGitHubRelease() {
 }
 
 function setupAutoUpdater() {
-  // Default handler — uses GitHub API fallback by default, replaced by electron-updater if available
+  // ── Register download & install handlers FIRST (always available, even without electron-updater) ──
+  ipcMain.handle('download-update', async () => {
+    try {
+      // Always download directly from GitHub releases
+      const resp = await fetch(GITHUB_API, {
+        headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
+      const release = await resp.json();
+      const tag = release.tag_name || '';
+      const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
+      if (!asset) return { ok: false, error: '未找到安装包' };
+      log('Updater: downloading from ' + asset.browser_download_url);
+      const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
+      if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
+      const total = parseInt(dlResp.headers.get('content-length') || '0');
+      let downloaded = 0;
+      const reader = dlResp.body.getReader();
+      const chunks = [];
+      const startTime = Date.now();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        downloaded += value.length;
+        if (total > 0) {
+          const pct = Math.round(downloaded / total * 100);
+          const speed = downloaded / ((Date.now() - startTime) / 1000);
+          broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
+        }
+      }
+      const { writeFileSync } = require('fs');
+      const { join } = require('path');
+      const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
+      writeFileSync(installerPath, Buffer.concat(chunks));
+      broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
+      log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
+      return { ok: true, installerPath };
+    } catch (e) {
+      log('Updater: download failed', e);
+      return { ok: false, error: e.message || '下载失败' };
+    }
+  });
+
+  ipcMain.handle('install-update', (_, installerPath) => {
+    if (installerPath) {
+      const { exec } = require('child_process');
+      exec('start "" "' + installerPath + '"', () => app.quit());
+      return true;
+    }
+    if (_updater) { autoUpdater.quitAndInstall(); return true; }
+    return false;
+  });
+
+  // ── Default check handler — uses GitHub API fallback ──
   let updateHandler = checkGitHubRelease;
   ipcMain.handle('check-for-update', async () => updateHandler());
 
@@ -55,54 +110,50 @@ function setupAutoUpdater() {
     const { autoUpdater } = require('electron-updater');
     _updater = autoUpdater;
 
-    try {
-      if (!autoUpdater.currentVersion) {
-        log('AutoUpdater: no update feed, using GitHub API fallback');
-        return;
-      }
-    } catch {
-      log('AutoUpdater: app-update.yml not found, using GitHub API fallback');
+    if (!autoUpdater.currentVersion) {
+      log('AutoUpdater: no update feed, using GitHub API fallback');
       return;
     }
+  } catch {
+    log('AutoUpdater: app-update.yml not found, using GitHub API fallback');
+    return;
+  }
 
-    // ── Config ──
-    autoUpdater.autoDownload = false;       // We control download explicitly
-    autoUpdater.autoInstallOnAppQuit = true; // If already downloaded, install on quit
-    autoUpdater.allowDowngrade = false;
-    autoUpdater.allowPrerelease = false;
+  // ── electron-updater available — set up full update flow ──
+  autoUpdater.autoDownload = false;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowDowngrade = false;
+  autoUpdater.allowPrerelease = false;
 
-    // ── Logger ──
-    autoUpdater.logger = {
-      debug: () => {},
-      info: (m) => log('Updater: ' + m),
-      warn: (m) => log('Updater warn: ' + m),
-      error: (m) => log('Updater error: ' + m),
-    };
+  autoUpdater.logger = {
+    debug: () => {},
+    info: (m) => log('Updater: ' + m),
+    warn: (m) => log('Updater warn: ' + m),
+    error: (m) => log('Updater error: ' + m),
+  };
 
-    // ── Events → broadcast to all renderer windows ──
-    autoUpdater.on('checking-for-update', () => {
-      log('Updater: checking...');
-      broadcast('update:checking');
+  autoUpdater.on('checking-for-update', () => {
+    log('Updater: checking...');
+    broadcast('update:checking');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    log('Updater: v' + info.version + ' available');
+    broadcast('update:available', {
+      version: info.version,
+      currentVersion: app.getVersion(),
+      releaseNotes: (info.releaseNotes || info.releaseName || '').replace(/<[^>]+>/g, ''),
     });
+  });
 
-    autoUpdater.on('update-available', (info) => {
-      log('Updater: v' + info.version + ' available, auto-downloading');
-      broadcast('update:available', {
-        version: info.version,
-        currentVersion: app.getVersion(),
-        releaseNotes: (info.releaseNotes || info.releaseName || '').replace(/<[^>]+>/g, ''),
-      });
-      // Don't auto-download — wait for user to click "立即升级" in dialog
-    });
+  autoUpdater.on('update-not-available', () => {
+    log('Updater: already latest');
+    broadcast('update:not-available');
+  });
 
-    autoUpdater.on('update-not-available', () => {
-      log('Updater: already latest');
-      broadcast('update:not-available');
-    });
-
-    autoUpdater.on('download-progress', (p) => {
-      broadcast('update:progress', { percent: Math.round(p.percent), transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond });
-    });
+  autoUpdater.on('download-progress', (p) => {
+    broadcast('update:progress', { percent: Math.round(p.percent), transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond });
+  });
 
     autoUpdater.on('update-downloaded', (info) => {
       log('Updater: v' + info.version + ' downloaded, ready to install');
