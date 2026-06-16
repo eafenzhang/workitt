@@ -14,10 +14,15 @@ export default function Settings() {
   const [cowVersion, setCowVersion] = useState('');
 
   useEffect(() => {
-    checkBackendStatus().then(s => setCowStatus(s));
-    getCowAgentConfig().then(c => {
-      if (c?.version) setCowVersion(String(c.version));
-    });
+    const poll = () => {
+      checkBackendStatus().then(s => setCowStatus(s));
+      getCowAgentConfig().then(c => {
+        if (c?.version) setCowVersion(String(c.version));
+      });
+    };
+    poll();
+    const timer = setInterval(poll, 5000); // poll every 5s
+    return () => clearInterval(timer);
   }, []);
   const [quickCollect, setQuickCollect] = useState(() => {
     try { return localStorage.getItem('quick_collect_enabled') === 'true'; } catch { return false; }
