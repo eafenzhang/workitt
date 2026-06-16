@@ -165,6 +165,13 @@ export default function Settings() {
                       ? `端口 ${cowStatus.port} · PID ${cowStatus.pid}${cowVersion ? ' · v' + cowVersion : ''}`
                       : 'CowAgent Python 后端未启动，对话使用 Workitt 本地模型'}
                   </div>
+                  {!cowStatus.running && (
+                    <div className="text-xs mt-1.5 p-2 rounded" style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}>
+                      请确保已安装 Python 3.10+（https://www.python.org/downloads/）<br />
+                      安装后重启应用即可自动启动 CowAgent 引擎<br />
+                      查看日志: <code style={{background:'var(--wiki-surface2)',padding:'1px 4px',borderRadius:'3px'}}>%APPDATA%\Workitt\workit.log</code>
+                    </div>
+                  )}
                 </div>
               </div>
               <button onClick={() => {
