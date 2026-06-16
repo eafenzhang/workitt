@@ -142,33 +142,45 @@ function setupAutoUpdater() {
 
     ipcMain.handle('download-update', async () => {
       try {
-        // Try electron-updater first
-        if (_updater) { await autoUpdater.downloadUpdate(); return { ok: true }; }
-        // Fallback: download from GitHub releases
-        const resp = await fetch(GITHUB_API, { headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workit-Updater' } });
+        // Always download directly from GitHub releases (reliable, avoids electron-updater 0% issue)
+        const resp = await fetch(GITHUB_API, { headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' }, signal: AbortSignal.timeout(15000) });
+        if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
         const release = await resp.json();
-        const asset = release.assets?.find(a => a.name?.endsWith('.exe'));
+        const tag = release.tag_name || '';
+        // Find the .exe asset (prefer setup exe)
+        const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
         if (!asset) return { ok: false, error: '未找到安装包' };
-        // Download with progress
-        const dlResp = await fetch(asset.browser_download_url);
+        log('Updater: downloading from ' + asset.browser_download_url);
+        // Download with progress streaming
+        const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
+        if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
         const total = parseInt(dlResp.headers.get('content-length') || '0');
         let downloaded = 0;
         const reader = dlResp.body.getReader();
         const chunks = [];
+        const startTime = Date.now();
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
           chunks.push(value);
           downloaded += value.length;
-          if (total > 0) broadcast('update:progress', { percent: Math.round(downloaded / total * 100) });
+          if (total > 0) {
+            const pct = Math.round(downloaded / total * 100);
+            const speed = downloaded / ((Date.now() - startTime) / 1000);
+            broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
+          }
         }
         const { writeFileSync } = require('fs');
         const { join } = require('path');
         const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
         writeFileSync(installerPath, Buffer.concat(chunks));
-        broadcast('update:downloaded', { version: release.tag_name });
+        broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
+        log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
         return { ok: true, installerPath };
-      } catch (e) { return { ok: false, error: e.message }; }
+      } catch (e) {
+        log('Updater: download failed', e);
+        return { ok: false, error: e.message || '下载失败' };
+      }
     });
 
     ipcMain.handle('install-update', (_, installerPath) => {
