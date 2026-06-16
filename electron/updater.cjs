@@ -4,7 +4,7 @@ const { log } = require('./database.cjs');
 const { getMainWindow, getQCWindow } = require('./window.cjs');
 
 const isDev = process.defaultApp || /electron/.test(process.argv[0]);
-const GITHUB_API = 'https://api.github.com/repos/eafenzhang/workit/releases/latest';
+const GITHUB_API = 'https://api.github.com/repos/eafenzhang/Workitt/releases/latest';
 
 // Broadcast to all renderer windows
 function broadcast(channel, payload) {
