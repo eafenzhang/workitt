@@ -1,7 +1,7 @@
 {
   "name": "workitt",
   "productName": "Workitt",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Workitt 智能体工作台",
   "author": "Eafenzhang",
   "private": true,
@@ -89,7 +89,14 @@
       {
         "from": "../cowagent-backend",
         "to": "cowagent-backend",
-        "filter": ["**/*", "!**/__pycache__/**", "!**/.git/**", "!**/.github/**", "!**/*.pyc", "!docs/**"]
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/.git/**",
+          "!**/.github/**",
+          "!**/*.pyc",
+          "!docs/**"
+        ]
       }
     ],
     "win": {
