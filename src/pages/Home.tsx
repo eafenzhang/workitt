@@ -660,7 +660,7 @@ function Home({ onOpenTab }: HomeProps) {
         )}
       </div>
       {/* Fixed bottom bar — toolbar inside input */}
-      <div className="flex-shrink-0 pb-3 pt-2 w-full flex justify-center" style={!hasMessages ? { position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--wiki-bg)' } : {}}>
+      <div className="flex-shrink-0 pb-3 pt-2 w-full flex justify-center" style={!hasMessages ? { position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--wiki-surface)' } : {}}>
         <div style={{ width: '42rem', maxWidth: 'calc(100% - 2rem)' }}>
           <HomeInput
             onSend={handleSend}

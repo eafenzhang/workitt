@@ -64,7 +64,7 @@ async function checkGitHubRelease() {
 }
 
 // Download installer from GitHub releases with progress
-// Uses Node.js https module (avoids TLS cert issues with Azure CDN in Electron's fetch)
+// Uses Electron's net.request (Chromium network stack — reliable TLS on Windows)
 async function downloadFromGitHub() {
   const resp = await fetch(GITHUB_API, {
     headers: githubHeaders(),
@@ -77,87 +77,87 @@ async function downloadFromGitHub() {
   if (!asset) return { ok: false, error: '未找到安装包' };
   log('Updater: downloading from ' + asset.browser_download_url);
 
-  // Download with progress via https (relaxed TLS for Azure CDN compatibility)
-  return await downloadWithHttp(asset.browser_download_url, tag);
+  return await downloadWithElectronNet(asset.browser_download_url, tag);
 }
 
-// Download using Node.js https module (more reliable than Electron fetch for CDN redirects)
-async function downloadWithHttp(downloadUrl, tag) {
-  const https = require('https');
+// Download using Electron's net module (Chromium stack — best TLS support)
+async function downloadWithElectronNet(downloadUrl, tag) {
+  const { net } = require('electron');
   const { writeFileSync } = require('fs');
   const { join } = require('path');
 
   return new Promise((resolve) => {
-    const parsedUrl = require('url').parse(downloadUrl);
-    const options = {
-      hostname: parsedUrl.hostname,
-      path: parsedUrl.path,
+    const urlObj = require('url').parse(downloadUrl);
+    const clientReq = net.request({
+      method: 'GET',
+      protocol: urlObj.protocol,
+      hostname: urlObj.hostname,
+      port: urlObj.port || 443,
+      path: urlObj.path,
       headers: { 'User-Agent': 'Workitt-Updater' },
-      rejectUnauthorized: false,
-      timeout: 300000,
-    };
+      redirect: 'follow',
+    });
 
-    const req = https.request(options, (res) => {
-      // Follow redirect manually
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        const redirectUrl = res.headers.location.startsWith('http')
-          ? res.headers.location
-          : require('url').resolve(downloadUrl, res.headers.location);
-        log('Updater: redirect (' + res.statusCode + ') to ' + redirectUrl);
-        res.resume(); // Drain the response
-        return resolve(downloadWithHttp(redirectUrl, tag));
-      }
-      if (res.statusCode !== 200) {
-        res.resume();
-        log('Updater: unexpected status ' + res.statusCode);
-        return resolve({ ok: false, error: '下载失败 HTTP ' + res.statusCode });
+    clientReq.on('response', (response) => {
+      const statusCode = response.statusCode;
+      log('Updater: net.response status=' + statusCode);
+
+      if (statusCode < 200 || statusCode >= 400) {
+        return resolve({ ok: false, error: '下载失败 HTTP ' + statusCode });
       }
 
-      const total = parseInt(res.headers['content-length'] || '0');
-      log('Updater: connected, size=' + total + ' bytes');
+      const total = parseInt(response.headers['content-length'] || '0');
       let downloaded = 0;
       const chunks = [];
       const startTime = Date.now();
       let lastBroadcast = 0;
+      let lastPct = -1;
 
-      res.on('data', (chunk) => {
+      response.on('data', (chunk) => {
         chunks.push(chunk);
         downloaded += chunk.length;
         const now = Date.now();
-        // Broadcast progress at most every 200ms to avoid flooding
         if (now - lastBroadcast > 200) {
           lastBroadcast = now;
           const pct = total > 0 ? Math.round(downloaded / total * 100) : 0;
-          const speed = downloaded / ((now - startTime) / 1000);
-          broadcast('update:progress', {
-            percent: pct,
-            transferred: downloaded,
-            total: total || downloaded,
-            bytesPerSecond: Math.round(speed),
-          });
+          if (pct !== lastPct) {
+            lastPct = pct;
+            const speed = downloaded / ((now - startTime) / 1000);
+            broadcast('update:progress', {
+              percent: pct,
+              transferred: downloaded,
+              total: total || downloaded,
+              bytesPerSecond: Math.round(speed),
+            });
+          }
         }
       });
 
-      res.on('end', () => {
+      response.on('end', () => {
         const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
         writeFileSync(installerPath, Buffer.concat(chunks));
         broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
-        log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
+        log('Updater: download complete (' + downloaded + ' bytes in ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's)');
         resolve({ ok: true, installerPath });
+      });
+
+      response.on('error', (e) => {
+        log('Updater: stream error: ' + e.message);
+        resolve({ ok: false, error: e.message || '下载失败' });
       });
     });
 
-    req.on('error', (e) => {
-      log('Updater: download error: ' + e.message);
-      resolve({ ok: false, error: e.message || '下载失败' });
+    clientReq.on('error', (e) => {
+      log('Updater: net.request error: ' + e.message);
+      resolve({ ok: false, error: e.message || '连接失败' });
     });
 
-    req.on('timeout', () => {
-      req.destroy();
+    clientReq.setTimeout(300000, () => {
+      clientReq.destroy();
       resolve({ ok: false, error: '下载超时' });
     });
 
-    req.end();
+    clientReq.end();
   });
 }
 

@@ -276,7 +276,7 @@ export default function DockBar({
             iconStyle={iconStyle}
             isOpen={isOpen(item.type)}
             isMinimized={isMinimized(item.type)}
-            noDot={item.type === 'browser' ? browserWindows.length === 0 : undefined}
+            noDot={item.type === 'browser' ? windows.filter(w => w.type === 'browser').length === 0 : undefined}
             onClick={handleDockClick}
             onContextMenu={handleContextMenu}
           />

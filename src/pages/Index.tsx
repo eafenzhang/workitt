@@ -301,7 +301,8 @@ export default function Index() {
       </TitleBar>
       )}
 
-      {/* OS Mode: Render desktop environment */}
+      {/* OS/App mode switch with fade transition */}
+      <div key={isOSMode ? 'desktop' : 'app'} className="flex flex-col flex-1 overflow-hidden page-fade-enter">
       {isOSMode ? (
         <AgentOSDesktop />
       ) : (
@@ -356,6 +357,7 @@ export default function Index() {
           </div>
         </>
       )}
+      </div>
 
       {/* Profile Wizard — full-screen overlay for first-time setup */}
     </div>

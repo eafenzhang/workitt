@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
-import { SunIcon, MoonIcon, MonitorIcon, RefreshCwIcon, CogIcon, Trash2Icon, PaletteIcon, InfoIcon, CloudIcon, CloudOffIcon, BotIcon } from 'lucide-react';
+import { SunIcon, MoonIcon, MonitorIcon, RefreshCwIcon, CogIcon, Trash2Icon, PaletteIcon, InfoIcon, BotIcon } from 'lucide-react';
 import { APP_ICON } from '../constants/icon';
 import { checkBackendStatus, getCowAgentConfig, getCowAgentVersion } from '../api/cowagent';
 import { toast } from 'sonner';
@@ -173,11 +173,6 @@ export default function Settings() {
           <div className="rounded-lg p-5" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                {cowStatus.running ? (
-                  <CloudIcon size={24} style={{color:'#10b981'}} />
-                ) : (
-                  <CloudOffIcon size={24} style={{color:'var(--wiki-text3)'}} />
-                )}
                 <div>
                   <div className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>
                     状态: {cowStatus.running ? '运行中' : '未连接'}
