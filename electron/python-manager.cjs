@@ -110,8 +110,18 @@ class PythonManager {
    * Search order: sibling dir → extraResources → PATH module.
    */
   _findBackendDir() {
+    // Allow override via env var
+    if (process.env.COWAGENT_BACKEND_DIR) {
+      const envPath = path.resolve(process.env.COWAGENT_BACKEND_DIR);
+      if (fs.existsSync(path.join(envPath, 'app.py'))) return envPath;
+    }
+
     const appPath = require('electron').app.getAppPath();
     const candidates = [
+      // Env var for IDE / dev workflows
+      process.env.COWAGENT_BACKEND_DIR,
+      // User-specified work directory (D:/Workitt/cowagent-backend)
+      path.resolve('D:/', 'Workitt', 'cowagent-backend'),
       // Dev: sibling of workit-ref (D:/Workitt/cowagent-backend/)
       path.resolve(appPath, '..', 'cowagent-backend'),
       // Dev: sibling of electron/ dir
@@ -122,9 +132,7 @@ class PythonManager {
       path.resolve(process.resourcesPath || '', 'cowagent-backend'),
       // App path
       path.resolve(appPath, 'cowagent-backend'),
-      // Workspace root (D:/Workitt/)
-      path.resolve(appPath, '..', '..', '..', '..', '..', 'cowagent-backend'),
-    ];
+    ].filter(Boolean);
 
     for (const dir of candidates) {
       if (fs.existsSync(path.join(dir, 'app.py'))) {
