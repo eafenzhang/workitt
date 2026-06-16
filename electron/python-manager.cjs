@@ -160,6 +160,35 @@ class PythonManager {
           windowsHide: true,
         });
         log(`Spawned: ${py} ${args.join(' ')} (PID ${child.pid})`);
+
+        // Capture stdout
+        let stdoutBuf = '';
+        child.stdout.on('data', (data) => {
+          stdoutBuf += data.toString();
+          // Only log non-chat (non-streaming) output to avoid flooding
+          const lines = stdoutBuf.split('\n');
+          stdoutBuf = lines.pop() || '';
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed && !trimmed.includes('[INFO]') && !trimmed.includes('[WebChannel]')) {
+              log(`[python:out] ${trimmed}`);
+            }
+          }
+        });
+
+        // Capture stderr — this is where Python errors go
+        child.stderr.on('data', (data) => {
+          const text = data.toString().trim();
+          if (text) log(`[python:err] ${text}`);
+        });
+
+        // Detect premature exit (crash before ready)
+        child.on('exit', (code) => {
+          log(`Python process exited with code ${code}`);
+          this._process = null;
+          this._ready = false;
+        });
+
         return child;
       } catch (e) {
         log(`${py} failed: ${e.message}`);
@@ -246,6 +275,11 @@ class PythonManager {
   async _waitForReady() {
     const start = Date.now();
     while (Date.now() - start < READY_TIMEOUT_MS) {
+      // Check if process already exited
+      if (!this._process || this._process.killed) {
+        log('Python process exited before becoming ready');
+        return false;
+      }
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
