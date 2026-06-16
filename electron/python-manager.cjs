@@ -118,19 +118,19 @@ class PythonManager {
 
     const appPath = require('electron').app.getAppPath();
     const candidates = [
-      // Env var for IDE / dev workflows
-      process.env.COWAGENT_BACKEND_DIR,
-      // User-specified work directory (D:/Workitt/cowagent-backend)
+      // 1. Extra resources (packaged app — bundled via electron-builder)
+      process.resourcesPath ? path.resolve(process.resourcesPath, 'cowagent-backend') : null,
+      // 2. Env var
+      process.env.COWAGENT_BACKEND_DIR || null,
+      // 3. User-specified work directory
       path.resolve('D:/', 'Workitt', 'cowagent-backend'),
-      // Dev: sibling of workit-ref (D:/Workitt/cowagent-backend/)
+      // 4. Dev: sibling of workit-ref
       path.resolve(appPath, '..', 'cowagent-backend'),
-      // Dev: sibling of electron/ dir
+      // 5. Dev: sibling of electron/ dir
       path.resolve(__dirname, '..', '..', 'cowagent-backend'),
-      // Same directory as Workit
+      // 6. Same directory as Workitt
       path.resolve(__dirname, '..', 'cowagent-backend'),
-      // Extra resources (production)
-      path.resolve(process.resourcesPath || '', 'cowagent-backend'),
-      // App path
+      // 7. App path
       path.resolve(appPath, 'cowagent-backend'),
     ].filter(Boolean);
 

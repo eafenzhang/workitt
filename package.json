@@ -85,6 +85,13 @@
       "build/icon.ico",
       "package.json"
     ],
+    "extraResources": [
+      {
+        "from": "../cowagent-backend",
+        "to": "cowagent-backend",
+        "filter": ["**/*", "!**/__pycache__/**", "!**/.git/**", "!**/.github/**", "!**/*.pyc", "!docs/**"]
+      }
+    ],
     "win": {
       "target": "nsis",
       "artifactName": "${productName}-Setup-${version}.${ext}",
