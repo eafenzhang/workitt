@@ -238,64 +238,6 @@ class PythonManager {
     }
   }
 
-      try {
-        this._process = spawn(pythonCmd, args, {
-          cwd,
-          stdio: ['ignore', 'pipe', 'pipe'],
-          env: {
-            ...process.env,
-            PYTHONUNBUFFERED: '1',
-          },
-          windowsHide: true,
-        });
-
-        const pid = this._process.pid;
-        log(`CowAgent backend started (PID ${pid})`);
-
-        // Capture stdout
-        this._process.stdout.on('data', (data) => {
-          const text = data.toString().trim();
-          if (text) log(`[stdout] ${text}`);
-        });
-
-        // Capture stderr
-        this._process.stderr.on('data', (data) => {
-          const text = data.toString().trim();
-          if (text) log(`[stderr] ${text}`);
-        });
-
-        this._process.on('error', (err) => {
-          log('Process error', err);
-          if (!this._exiting) reject(err);
-        });
-
-        this._process.on('exit', (code) => {
-          log(`Process exited with code ${code}`);
-          this._process = null;
-          this._ready = false;
-          if (!this._exiting && code !== 0) {
-            log('Unexpected exit — CowAgent backend crashed');
-          }
-        });
-
-        // Wait for HTTP readiness
-        this._waitForReady()
-          .then(() => {
-            this._ready = true;
-            log('CowAgent backend is ready');
-            resolve();
-          })
-          .catch((err) => {
-            log('Backend failed to become ready', err);
-            this.stop();
-            reject(err);
-          });
-      } catch (err) {
-        log('Failed to spawn Python process', err);
-        reject(err);
-      }
-    });
-  }
 
   /**
    * Poll the CowAgent HTTP endpoint until it responds.
