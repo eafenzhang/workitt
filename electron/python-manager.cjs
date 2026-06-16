@@ -400,23 +400,28 @@ class PythonManager {
       });
     });
 
-    // Git pull
+    // Git pull (stash local changes first to avoid merge conflicts)
     const gitDir = path.join(backendDir, '.git');
     if (fs.existsSync(gitDir)) {
-      log('CowAgent: pulling latest code via git pull...');
+      log('CowAgent: stashing local changes before git pull...');
+      await execAsync('git stash', { cwd: backendDir }).catch(() => {});
       try {
+        log('CowAgent: pulling latest code via git pull...');
         await execAsync('git pull', { cwd: backendDir });
         log('CowAgent: git pull succeeded');
       } catch (e) {
-        log('CowAgent: git pull failed, trying Gitee mirror...');
+        log('CowAgent: git pull failed (' + e.message.substring(0, 80) + '), trying Gitee mirror...');
         try {
           await execAsync('git remote set-url origin https://gitee.com/zhayujie/CowAgent.git', { cwd: backendDir });
           await execAsync('git pull', { cwd: backendDir });
         } catch (e2) {
-          log('CowAgent: git pull from Gitee also failed', e2);
+          await execAsync('git stash pop', { cwd: backendDir }).catch(() => {});
+          log('CowAgent: git pull from both remotes failed', e2);
           throw new Error('Git pull 失败: ' + (e2.message || ''));
         }
       }
+      // Restore stashed changes
+      await execAsync('git stash pop', { cwd: backendDir }).catch(() => {});
     } else {
       log('CowAgent: not a git repository, skipping code update. Install deps only.');
     }
