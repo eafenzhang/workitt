@@ -135,7 +135,9 @@ class PythonManager {
     ].filter(Boolean);
 
     for (const dir of candidates) {
-      if (fs.existsSync(path.join(dir, 'app.py'))) {
+      const checkPath = path.join(dir, 'app.py');
+      log(`Looking for backend: ${checkPath} — ${fs.existsSync(checkPath) ? 'FOUND' : 'not found'}`);
+      if (fs.existsSync(checkPath)) {
         log(`Found CowAgent backend at: ${dir}`);
         return dir;
       }
@@ -151,40 +153,62 @@ class PythonManager {
    */
   _trySpawn(args, cwd) {
     const pys = ['python', 'python3', 'py'];
+    // Ensure user site-packages is in path (for --user pip installs)
+    const extraEnv = { ...process.env, PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' };
+    // Add common user site-packages to PYTHONPATH if not already set
+    if (!extraEnv.PYTHONPATH) {
+      try {
+        const { execSync } = require('child_process');
+        const userSite = execSync('python -c "import site; print(site.getusersitepackages())"', { encoding: 'utf8', timeout: 5000 }).trim();
+        if (userSite) extraEnv.PYTHONPATH = userSite;
+      } catch {}
+    }
+
     for (const py of pys) {
       try {
         const child = spawn(py, args, {
           cwd,
           stdio: ['ignore', 'pipe', 'pipe'],
-          env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
+          env: extraEnv,
           windowsHide: true,
         });
-        log(`Spawned: ${py} ${args.join(' ')} (PID ${child.pid})`);
+        log(`Spawned: ${py} ${args.join(' ')} (PID ${child.pid})${cwd ? ' cwd=' + cwd : ''}`);
 
-        // Capture stdout
+        // Capture stdout — buffer lines, always capture ERROR/WARNING
         let stdoutBuf = '';
         child.stdout.on('data', (data) => {
           stdoutBuf += data.toString();
-          // Only log non-chat (non-streaming) output to avoid flooding
           const lines = stdoutBuf.split('\n');
           stdoutBuf = lines.pop() || '';
           for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed && !trimmed.includes('[INFO]') && !trimmed.includes('[WebChannel]')) {
-              log(`[python:out] ${trimmed}`);
+            if (trimmed) {
+              if (trimmed.includes('[ERROR]') || trimmed.includes('[CRITICAL]')) {
+                log(`[python:ERR] ${trimmed}`);
+              } else if (!trimmed.includes('[INFO]') && !trimmed.includes('[WebChannel]')) {
+                log(`[python:out] ${trimmed}`);
+              }
             }
           }
         });
 
-        // Capture stderr — this is where Python errors go
+        // Capture stderr — Python tracebacks go here
+        let stderrBuf = '';
         child.stderr.on('data', (data) => {
-          const text = data.toString().trim();
-          if (text) log(`[python:err] ${text}`);
+          const text = data.toString();
+          stderrBuf += text;
+          const lines = text.trim().split('\n');
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed) log(`[python:err] ${trimmed}`);
+          }
         });
 
         // Detect premature exit (crash before ready)
         child.on('exit', (code) => {
           log(`Python process exited with code ${code}`);
+          if (stdoutBuf.trim()) log(`[python:flush:out] ${stdoutBuf.trim()}`);
+          if (stderrBuf.trim()) log(`[python:flush:err] ${stderrBuf.trim()}`);
           this._process = null;
           this._ready = false;
         });
@@ -248,10 +272,14 @@ class PythonManager {
       const ready = await this._waitForReady();
       if (ready) { this._ready = true; return; }
 
-      // Attempt 1 timed out — kill and install deps
-      log('Attempt 1 timed out, installing dependencies and retrying...');
+      // Attempt 1 failed — install deps and retry
+      log('Attempt 1 failed, installing Python dependencies...');
       this.stop();
       if (backendDir) await this._installDeps(backendDir);
+    } else {
+      log('Could not start CowAgent backend: Python not found or backend not available');
+      log('请确保已安装 Python 3.10+（https://www.python.org/downloads/）');
+      return;
     }
 
     // Attempt 2: spawn after dependency install
@@ -260,10 +288,11 @@ class PythonManager {
       this._process = child2;
       const ready = await this._waitForReady();
       if (ready) { this._ready = true; return; }
-      log('Attempt 2 also timed out — CowAgent backend may need manual setup');
+      log('Attempt 2 also failed — CowAgent backend could not start');
+      log('请检查 Workitt 日志（%APPDATA%/Workitt/workit.log）获取详细错误信息');
       this.stop();
     } else {
-      log('Could not start CowAgent backend: Python not found or backend not available');
+      log('Could not start CowAgent backend on retry');
     }
   }
 
@@ -274,12 +303,20 @@ class PythonManager {
    */
   async _waitForReady() {
     const start = Date.now();
+    let consecutiveExitCheck = 0;
     while (Date.now() - start < READY_TIMEOUT_MS) {
       // Check if process already exited
       if (!this._process || this._process.killed) {
-        log('Python process exited before becoming ready');
-        return false;
+        consecutiveExitCheck++;
+        // Wait a tiny bit for exit handler to flush buffered output
+        if (consecutiveExitCheck >= 3) {
+          log('Python process exited before becoming ready');
+          return false;
+        }
+        await sleep(100);
+        continue;
       }
+      consecutiveExitCheck = 0;
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
