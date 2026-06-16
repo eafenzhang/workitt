@@ -400,6 +400,25 @@ select option {
   animation: pageFadeIn 0.2s ease-out;
 }
 
+/* Mode transition overlay for app/desktop switching */
+@keyframes modeTransitionFade {
+  0% { opacity: 0; }
+  20% { opacity: 1; }
+  71% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.mode-transition-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--wiki-bg);
+  animation: modeTransitionFade 700ms ease-in-out forwards;
+  pointer-events: none;
+}
+
 /* Portal mount point for dropdowns/overlays that escape overflow clipping */
 #portal-root {
   position: fixed;

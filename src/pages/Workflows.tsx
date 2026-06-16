@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { PlusIcon, PlayIcon, TrashIcon, ClockIcon, ZapIcon, XIcon, ChevronDownIcon, CheckCircleIcon, XCircleIcon, LoaderIcon } from 'lucide-react';
 import { toast } from 'sonner';
-import UnifiedSidebar, { SidebarToggle, SidebarItem } from '../components/UnifiedSidebar';
+import { SidebarItem } from '../components/UnifiedSidebar';
+import DataPage from '../components/DataPage';
 
 interface WorkflowStep {
   id: string;
@@ -221,64 +222,65 @@ export default function Workflows() {
     );
   }
 
+  // ── Build sidebar items ──
+  const sidebarItems = [
+    <SidebarItem
+      key="all"
+      label="全部工作流"
+      active={selectedSidebarItem === 'all'}
+      onClick={() => { setSelectedSidebarItem('all'); setActiveWf(null); }}
+    />,
+    ...(BUILTIN_TEMPLATES.length > 0 ? [
+      <div key="sep-templates" className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">内置模板</div>,
+      ...BUILTIN_TEMPLATES.map(tmpl => (
+        <SidebarItem
+          key={tmpl.id}
+          label={tmpl.name}
+          active={selectedSidebarItem === tmpl.id}
+          count={tmpl.steps.length}
+          onClick={() => { openTemplate(tmpl); setSelectedSidebarItem(tmpl.id); }}
+        />
+      )),
+    ] : []),
+    <div key="sep-myworkflows" className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">我的工作流</div>,
+    ...(workflows.length === 0
+      ? [<div key="empty-workflows" className="text-xs text-wiki-text3 px-3 py-4 text-center">暂无工作流</div>]
+      : workflows.map(wf => (
+          <SidebarItem
+            key={wf.id}
+            label={wf.name}
+            active={selectedSidebarItem === wf.id}
+            count={wf.steps?.length}
+            onClick={() => { setSelectedSidebarItem(wf.id); loadExecutions(wf.id); }}
+          />
+        ))
+    ),
+  ];
+
   // ── List view ──
   return (
-    <div className="flex h-full overflow-hidden">
-      <UnifiedSidebar
-        open={sidebarOpen}
-        onToggle={() => setSidebarOpen(!sidebarOpen)}
-        title="工作流"
-      >
-        <SidebarItem
-          label="全部工作流"
-          active={selectedSidebarItem === 'all'}
-          onClick={() => { setSelectedSidebarItem('all'); setActiveWf(null); }}
-        />
-        {BUILTIN_TEMPLATES.length > 0 && (
-          <>
-            <div className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">内置模板</div>
-            {BUILTIN_TEMPLATES.map(tmpl => (
-              <SidebarItem
-                key={tmpl.id}
-                label={tmpl.name}
-                active={selectedSidebarItem === tmpl.id}
-                count={tmpl.steps.length}
-                onClick={() => { openTemplate(tmpl); setSelectedSidebarItem(tmpl.id); }}
-              />
-            ))}
-          </>
-        )}
-        <div className="text-xs font-medium text-wiki-text3 px-3 py-1 mt-2 uppercase tracking-wider">我的工作流</div>
-        {workflows.length === 0 ? (
-          <div className="text-xs text-wiki-text3 px-3 py-4 text-center">暂无工作流</div>
-        ) : (
-          workflows.map(wf => (
-            <SidebarItem
-              key={wf.id}
-              label={wf.name}
-              active={selectedSidebarItem === wf.id}
-              count={wf.steps?.length}
-              onClick={() => { setSelectedSidebarItem(wf.id); loadExecutions(wf.id); }}
-            />
-          ))
-        )}
-      </UnifiedSidebar>
-
-      <div className="flex flex-col flex-1 overflow-hidden">
-        <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--wiki-border)' }}>
-          <SidebarToggle open={sidebarOpen} onToggle={() => setSidebarOpen(!sidebarOpen)} />
-          <div className="flex-1 text-base font-semibold text-wiki-text">工作流</div>
+    <DataPage
+      sidebarOpen={sidebarOpen}
+      onToggleSidebar={() => setSidebarOpen(!sidebarOpen)}
+      sidebarTitle="工作流"
+      sidebarItems={sidebarItems}
+      title="工作流"
+      description="管理工作流，自动化任务流程"
+      headerActions={
         <button onClick={() => { setEditing({ id: 'wf_' + Date.now(), name: '', description: '', steps: [], enabled: true }); setShowEditor(true); }}
-          className="flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-medium"
+          className="flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-medium"
           style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
-          <PlusIcon size={14} />新建
+          <PlusIcon size={14} />新建工作流
         </button>
-      </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-4 scrollbar-thin">
-        {/* Templates */}
-        <div className="mb-6">
-          <div className="text-xs font-medium text-wiki-text3 mb-3 uppercase tracking-wider">内置模板</div>
+      }
+      hideSearch={true}
+      hideViewToggle={true}
+      isEmpty={false}
+    >
+      {/* Templates section */}
+      {BUILTIN_TEMPLATES.length > 0 && (
+        <div className="mb-2">
+          <div className="text-xs font-medium text-wiki-text3 mb-2 uppercase tracking-wider">内置模板</div>
           <div className="flex flex-col gap-2">
             {BUILTIN_TEMPLATES.map(tmpl => (
               <div key={tmpl.id} onClick={() => openTemplate(tmpl)}
@@ -291,93 +293,88 @@ export default function Workflows() {
             ))}
           </div>
         </div>
+      )}
 
-        {/* User workflows */}
-        <div className="mb-2">
-          <div className="text-xs font-medium text-wiki-text3 uppercase tracking-wider">我的工作流</div>
-        </div>
-        {workflows.length === 0 ? (
-          <div className="text-xs text-wiki-text3 py-8 text-center">暂无工作流，点击「新建」或选择上方模板开始</div>
-        ) : (
-          <div className="flex flex-col gap-2">
-            {workflows.map(wf => (
-              <div key={wf.id}>
-                <div className="flex items-center gap-3 p-4 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-                  <div className="flex-1 min-w-0 cursor-pointer" onClick={() => loadExecutions(wf.id)}>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-wiki-text">{wf.name}</span>
-                      <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: wf.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(128,128,128,0.12)', color: wf.enabled ? '#10b981' : 'var(--wiki-text3)' }}>{wf.enabled ? '启用' : '禁用'}</span>
-                    </div>
-                    <div className="text-xs text-wiki-text3 mt-0.5">{wf.description || '无描述'} · {wf.steps?.length || 0} 步</div>
-                  </div>
-                  <button onClick={() => handleExecute(wf)} disabled={executing === wf.id}
-                    className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="执行">
-                    {executing === wf.id ? <LoaderIcon size={14} className="animate-spin" style={{ color: 'var(--wiki-text2)' }} />
-                      : <PlayIcon size={14} style={{ color: '#10b981' }} />}
-                  </button>
-                  <button onClick={() => { setEditing({ ...wf }); setShowEditor(true); }}
-                    className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="编辑">
-                    <ZapIcon size={14} style={{ color: 'var(--wiki-text2)' }} />
-                  </button>
-                  <button onClick={() => handleDelete(wf.id)} className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="删除">
-                    <TrashIcon size={14} style={{ color: 'var(--wiki-danger)' }} />
-                  </button>
+      {/* User workflows */}
+      <div className="text-xs font-medium text-wiki-text3 mb-2 uppercase tracking-wider">我的工作流</div>
+      {workflows.length === 0 ? (
+        <div className="text-xs text-wiki-text3 py-4 text-center">暂无工作流，点击「新建」或选择上方模板开始</div>
+      ) : (
+        workflows.map(wf => (
+          <div key={wf.id}>
+            <div className="flex items-center gap-3 p-4 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+              <div className="flex-1 min-w-0 cursor-pointer" onClick={() => loadExecutions(wf.id)}>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-wiki-text">{wf.name}</span>
+                  <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: wf.enabled ? 'rgba(16,185,129,0.12)' : 'rgba(128,128,128,0.12)', color: wf.enabled ? '#10b981' : 'var(--wiki-text3)' }}>{wf.enabled ? '启用' : '禁用'}</span>
                 </div>
+                <div className="text-xs text-wiki-text3 mt-0.5">{wf.description || '无描述'} · {wf.steps?.length || 0} 步</div>
+              </div>
+              <button onClick={() => handleExecute(wf)} disabled={executing === wf.id}
+                className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="执行">
+                {executing === wf.id ? <LoaderIcon size={14} className="animate-spin" style={{ color: 'var(--wiki-text2)' }} />
+                  : <PlayIcon size={14} style={{ color: '#10b981' }} />}
+              </button>
+              <button onClick={() => { setEditing({ ...wf }); setShowEditor(true); }}
+                className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="编辑">
+                <ZapIcon size={14} style={{ color: 'var(--wiki-text2)' }} />
+              </button>
+              <button onClick={() => handleDelete(wf.id)} className="p-1.5 rounded-lg hover:bg-wiki-surface2" title="删除">
+                <TrashIcon size={14} style={{ color: 'var(--wiki-danger)' }} />
+              </button>
+            </div>
 
-                {/* Execution history for active workflow */}
-                {activeWf === wf.id && (
-                  <div className="mt-2 ml-4 border-l-2 pl-4" style={{ borderColor: 'var(--wiki-border)' }}>
-                    <div className="text-xs font-medium text-wiki-text3 mb-2">执行历史</div>
-                    {executions.length === 0 ? (
-                      <div className="text-xs text-wiki-text3 py-2">暂无执行记录</div>
-                    ) : (
-                      executions.map(ex => (
-                        <div key={ex.id} className="mb-2">
-                          <div className="flex items-center gap-2 py-1 cursor-pointer" onClick={() => setExpandedExec(expandedExec === ex.id ? null : ex.id)}>
-                            {ex.status === 'completed' ? <CheckCircleIcon size={12} style={{ color: '#10b981' }} />
-                              : ex.status === 'failed' ? <XCircleIcon size={12} style={{ color: '#ef4444' }} />
-                              : <ClockIcon size={12} style={{ color: 'var(--wiki-text3)' }} />}
-                            <span className="text-xs text-wiki-text2">{ex.status === 'completed' ? '完成' : ex.status === 'failed' ? '失败' : '运行中'}</span>
-                            <span className="text-xs text-wiki-text3">{ex.startedAt ? new Date(ex.startedAt).toLocaleString('zh-CN') : ''}</span>
-                            <ChevronDownIcon size={10} style={{ color: 'var(--wiki-text3)', transform: expandedExec === ex.id ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
-                          </div>
-                          {expandedExec === ex.id && (
-                            <div className="ml-4 mb-3 p-2 rounded text-xs" style={{ background: 'var(--wiki-surface2)' }}>
-                              {ex.error && <div className="text-red-400 mb-2">错误: {ex.error}</div>}
-                              {ex.stepResults?.map((sr: any, i: number) => (
-                                <div key={i} className="flex items-center gap-2 py-0.5">
-                                  <span className="text-wiki-text3">#{i + 1} {sr.type}</span>
-                                  {sr.status === 'completed' ? <CheckCircleIcon size={10} style={{ color: '#10b981' }} />
-                                    : <XCircleIcon size={10} style={{ color: '#ef4444' }} />}
-                                  <span className="text-wiki-text2 truncate">{sr.stepId}</span>
-                                </div>
-                              ))}
+            {/* Execution history for active workflow */}
+            {activeWf === wf.id && (
+              <div className="mt-2 ml-4 border-l-2 pl-4" style={{ borderColor: 'var(--wiki-border)' }}>
+                <div className="text-xs font-medium text-wiki-text3 mb-2">执行历史</div>
+                {executions.length === 0 ? (
+                  <div className="text-xs text-wiki-text3 py-2">暂无执行记录</div>
+                ) : (
+                  executions.map(ex => (
+                    <div key={ex.id} className="mb-2">
+                      <div className="flex items-center gap-2 py-1 cursor-pointer" onClick={() => setExpandedExec(expandedExec === ex.id ? null : ex.id)}>
+                        {ex.status === 'completed' ? <CheckCircleIcon size={12} style={{ color: '#10b981' }} />
+                          : ex.status === 'failed' ? <XCircleIcon size={12} style={{ color: '#ef4444' }} />
+                          : <ClockIcon size={12} style={{ color: 'var(--wiki-text3)' }} />}
+                        <span className="text-xs text-wiki-text2">{ex.status === 'completed' ? '完成' : ex.status === 'failed' ? '失败' : '运行中'}</span>
+                        <span className="text-xs text-wiki-text3">{ex.startedAt ? new Date(ex.startedAt).toLocaleString('zh-CN') : ''}</span>
+                        <ChevronDownIcon size={10} style={{ color: 'var(--wiki-text3)', transform: expandedExec === ex.id ? 'rotate(180deg)' : 'none', transition: '0.2s' }} />
+                      </div>
+                      {expandedExec === ex.id && (
+                        <div className="ml-4 mb-3 p-2 rounded text-xs" style={{ background: 'var(--wiki-surface2)' }}>
+                          {ex.error && <div className="text-red-400 mb-2">错误: {ex.error}</div>}
+                          {ex.stepResults?.map((sr: any, i: number) => (
+                            <div key={i} className="flex items-center gap-2 py-0.5">
+                              <span className="text-wiki-text3">#{i + 1} {sr.type}</span>
+                              {sr.status === 'completed' ? <CheckCircleIcon size={10} style={{ color: '#10b981' }} />
+                                : <XCircleIcon size={10} style={{ color: '#ef4444' }} />}
+                              <span className="text-wiki-text2 truncate">{sr.stepId}</span>
                             </div>
-                          )}
+                          ))}
                         </div>
-                      ))
-                    )}
-                  </div>
+                      )}
+                    </div>
+                  ))
                 )}
               </div>
-            ))}
+            )}
           </div>
-        )}
+        ))
+      )}
 
-        {/* Execution input panel */}
-        <div className="mt-6 p-4 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
-          <div className="text-xs font-medium text-wiki-text2 mb-2">执行输入 (JSON)</div>
-          <textarea
-            className="w-full px-3 py-2 rounded-lg text-xs outline-none resize-none font-mono"
-            style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text)', border: 'none' }}
-            rows={4}
-            placeholder='{"description": "测试需求描述", "content": "文档内容..."}'
-            value={inputsText}
-            onChange={e => setInputsText(e.target.value)}
-          />
-        </div>
+      {/* Execution input panel */}
+      <div className="mt-6 p-4 rounded-lg" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }}>
+        <div className="text-xs font-medium text-wiki-text2 mb-2">执行输入 (JSON)</div>
+        <textarea
+          className="w-full px-3 py-2 rounded-lg text-xs outline-none resize-none font-mono"
+          style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text)', border: 'none' }}
+          rows={4}
+          placeholder='{"description": "测试需求描述", "content": "文档内容..."}'
+          value={inputsText}
+          onChange={e => setInputsText(e.target.value)}
+        />
       </div>
-    </div>
-  </div>
+    </DataPage>
   );
 }

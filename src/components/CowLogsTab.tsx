@@ -44,7 +44,7 @@ export default function CowLogsTab() {
   };
 
   return (
-    <div className="flex flex-col gap-3 py-4 px-4">
+    <div className="flex flex-col gap-3 py-4 px-4 h-full">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>CowAgent 实时日志</h1>
@@ -59,7 +59,7 @@ export default function CowLogsTab() {
         </div>
       </div>
 
-      <div ref={scrollRef} className="rounded-lg h-[500px] overflow-y-auto scrollbar-thin font-mono text-xs p-3" style={{ background: '#1a1a2e', color: '#e0e0e0', border: '1px solid var(--wiki-border)' }}>
+      <div ref={scrollRef} className="rounded-lg flex-1 min-h-0 overflow-y-auto scrollbar-thin font-mono text-xs p-3" style={{ background: '#1a1a2e', color: '#e0e0e0', border: '1px solid var(--wiki-border)' }}>
         {lines.length === 0 ? (
           <div className="flex items-center justify-center h-full text-xs" style={{ color: '#666' }}>
             {connected ? '等待日志输出...' : '连接 CowAgent 后端以接收日志...'}

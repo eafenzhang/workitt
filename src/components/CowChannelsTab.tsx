@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getChannels, saveChannelConfig, connectChannel, disconnectChannel, type ChannelDef } from '../api/cowagent';
-import { RefreshCwIcon, WifiIcon, WifiOffIcon, PlugIcon, UnplugIcon, MessageSquareIcon, GlobeIcon, SmartphoneIcon, HeadphonesIcon } from 'lucide-react';
+import { RefreshCwIcon, WifiIcon, WifiOffIcon, PlugIcon, UnplugIcon, MessageSquareIcon, GlobeIcon, SmartphoneIcon, HeadphonesIcon, PencilIcon, XIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ICON_MAP: Record<string, any> = {
@@ -17,6 +17,8 @@ export default function CowChannelsTab() {
   const [channels, setChannels] = useState<ChannelDef[]>([]);
   const [loading, setLoading] = useState(false);
   const [configForms, setConfigForms] = useState<Record<string, Record<string, string>>>({});
+  const [editingChannel, setEditingChannel] = useState<ChannelDef | null>(null);
+  const [editForm, setEditForm] = useState<Record<string, string>>({});
 
   useEffect(() => { fetchChannels(); }, []);
 
@@ -25,7 +27,6 @@ export default function CowChannelsTab() {
     try {
       const list = await getChannels();
       setChannels(list);
-      // Initialize form values
       const forms: Record<string, Record<string, string>> = {};
       for (const ch of list) {
         forms[ch.name] = {};
@@ -51,11 +52,24 @@ export default function CowChannelsTab() {
     else toast.error('断开失败');
   };
 
-  const handleSave = async (ch: ChannelDef) => {
-    const config = configForms[ch.name] || {};
-    const ok = await saveChannelConfig(ch.name, config);
-    if (ok) { toast.success(`${ch.label} 配置已保存`); }
-    else toast.error('保存失败');
+  const openEdit = (ch: ChannelDef) => {
+    setEditForm({ ...(configForms[ch.name] || {}) });
+    setEditingChannel(ch);
+  };
+
+  const handleEditSave = async () => {
+    if (!editingChannel) return;
+    setConfigForms(prev => ({
+      ...prev,
+      [editingChannel.name]: { ...editForm },
+    }));
+    const ok = await saveChannelConfig(editingChannel.name, editForm);
+    if (ok) {
+      toast.success(`${editingChannel.label} 配置已保存`);
+      setEditingChannel(null);
+    } else {
+      toast.error('保存失败');
+    }
   };
 
   return (
@@ -82,7 +96,6 @@ export default function CowChannelsTab() {
       {channels.map(ch => {
         const iconKey = ch.name.toLowerCase();
         const Icon = ICON_MAP[iconKey] || MessageSquareIcon;
-        const form = configForms[ch.name] || {};
         const isActive = ch.active;
 
         return (
@@ -113,6 +126,11 @@ export default function CowChannelsTab() {
                 </div>
               </div>
               <div className="flex items-center gap-1.5">
+                <button onClick={() => openEdit(ch)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium"
+                  style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+                  <PencilIcon size={12} />编辑
+                </button>
                 {isActive ? (
                   <button onClick={() => handleDisconnect(ch)}
                     className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium"
@@ -128,32 +146,39 @@ export default function CowChannelsTab() {
                 )}
               </div>
             </div>
-
-            {/* Config fields */}
-            {ch.fields.length > 0 && (
-              <div className="px-4 pb-4 grid grid-cols-2 gap-3" style={{ borderTop: '1px solid var(--wiki-border)' }}>
-                {ch.fields.map(field => (
-                  <div key={field.key} className="pt-3">
-                    <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>{field.label}</label>
-                    <div className="flex gap-1.5">
-                      <input value={form[field.key] || ''} onChange={e => setConfigForms(prev => ({
-                        ...prev, [ch.name]: { ...prev[ch.name], [field.key]: e.target.value }
-                      }))}
-                        type={field.type === 'password' ? 'password' : 'text'}
-                        placeholder={field.default || `输入${field.label}`}
-                        className="flex-1 px-2.5 py-1.5 rounded text-xs outline-none"
-                        style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
-                      <button onClick={() => handleSave(ch)} className="px-2 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-                        保存
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         );
       })}
+
+      {/* Edit modal */}
+      {editingChannel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--wiki-overlay-heavy)', backdropFilter: 'blur(4px)' }} onClick={() => setEditingChannel(null)}>
+          <div className="w-[420px] rounded-lg p-5" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--wiki-text)' }}>
+                配置 {typeof editingChannel.label === 'string' ? editingChannel.label : (editingChannel.label['zh'] || editingChannel.name)}
+              </h3>
+              <button onClick={() => setEditingChannel(null)}><XIcon size={16} style={{ color: 'var(--wiki-text3)' }} /></button>
+            </div>
+            <div className="flex flex-col gap-3">
+              {editingChannel.fields.map(field => (
+                <div key={field.key}>
+                  <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>{field.label}</label>
+                  <input value={editForm[field.key] || ''} onChange={e => setEditForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                    type={field.type === 'password' ? 'password' : 'text'}
+                    placeholder={field.default || `输入${field.label}`}
+                    className="w-full px-2.5 py-1.5 rounded text-xs outline-none"
+                    style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                </div>
+              ))}
+              <div className="flex justify-end gap-2 pt-2">
+                <button onClick={() => setEditingChannel(null)} className="px-3 py-1.5 rounded text-xs" style={{ color: 'var(--wiki-text3)' }}>取消</button>
+                <button onClick={handleEditSave} className="px-4 py-1.5 rounded text-xs font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>保存</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

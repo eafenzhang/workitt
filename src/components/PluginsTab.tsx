@@ -23,7 +23,7 @@ const DEFAULT_CATALOG = [
 
 const sourceLabels: Record<string, string> = { 'built-in': '内置', 'marketplace': '市场', 'custom': '自定义', 'url': 'URL' };
 
-export default function PluginsTab({ hideToolbar }: { hideToolbar?: boolean }) {
+export default function PluginsTab({ hideToolbar, onRenderActions }: { hideToolbar?: boolean; onRenderActions?: (actions: React.ReactNode) => void }) {
   const [items, setItems] = useState<PluginItem[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<{ name: string; description: string; configJson: string }>({ name: '', description: '', configJson: '{}' });
@@ -31,6 +31,17 @@ export default function PluginsTab({ hideToolbar }: { hideToolbar?: boolean }) {
   const [addForm, setAddForm] = useState<{ name: string; description: string; configJson: string }>({ name: '', description: '', configJson: '{}' });
 
   useEffect(() => { fetchItems(); }, []);
+
+  // Expose a "Plugin" action button to the page header
+  useEffect(() => {
+    onRenderActions?.(
+      <button onClick={() => { setAddForm({ name: '', description: '', configJson: '{}' }); setShowAddForm(true); }}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium"
+        style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
+        <WrenchIcon size={14} />Plugin
+      </button>
+    );
+  }, [onRenderActions]);
 
   const fetchItems = () => {
     apiFetch(API.plugins).then(r => r.json()).then(data => setItems(Array.isArray(data) ? data : [])).catch(() => {});

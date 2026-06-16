@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, lazy, Suspense } from 'react';
 import Sidebar from '../components/Sidebar';
 import TitleBar from '../components/TitleBar';
 import { XIcon, Trash2Icon } from 'lucide-react';
@@ -86,6 +86,8 @@ export default function Index() {
 
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const hasAutoOpenedRef = React.useRef(false);
+  const [transitioning, setTransitioning] = useState(false);
+  const transitioningRef = useRef(false);
 
   // Auto-open home window when entering OS mode for the first time
   useEffect(() => {
@@ -167,6 +169,24 @@ export default function Index() {
     window.addEventListener('open-browser-tab', handler);
     return () => window.removeEventListener('open-browser-tab', handler);
   }, [onOpenBrowser]);
+
+  // ── Mode transition overlay ──────────────────────────────────────
+  const handleToggleMode = useCallback(() => {
+    if (transitioningRef.current) return;
+    transitioningRef.current = true;
+    setTransitioning(true);
+
+    // Toggle mode during the fade-out phase so the new mode is revealed
+    setTimeout(() => {
+      toggleOSMode();
+    }, 500);
+
+    // Remove overlay after the CSS animation completes (700ms) + buffer
+    setTimeout(() => {
+      transitioningRef.current = false;
+      setTransitioning(false);
+    }, 720);
+  }, [toggleOSMode]);
 
   const activeTab = tabs.find(t => t.id === activeTabId);
 
@@ -295,7 +315,7 @@ export default function Index() {
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={onToggleSidebar}
         isOSMode={isOSMode}
-        onToggleOSMode={toggleOSMode}
+        onToggleOSMode={handleToggleMode}
       >
         {tabBar}
       </TitleBar>
@@ -304,7 +324,7 @@ export default function Index() {
       {/* OS/App mode switch with fade transition */}
       <div key={isOSMode ? 'desktop' : 'app'} className="flex flex-col flex-1 overflow-hidden page-fade-enter">
       {isOSMode ? (
-        <AgentOSDesktop />
+        <AgentOSDesktop onToggleOSMode={handleToggleMode} />
       ) : (
         <>
           {/* Below: Sidebar + Content (classic mode) */}
@@ -358,6 +378,19 @@ export default function Index() {
         </>
       )}
       </div>
+
+      {/* Mode transition overlay — fades in, shows "Coming..." with spinner, fades out */}
+      {transitioning && (
+        <div className="mode-transition-overlay">
+          <div className="flex flex-col items-center gap-5">
+            <div className="relative w-12 h-12">
+              <div className="absolute inset-0 rounded-full border-2 border-wiki-border" />
+              <div className="absolute inset-0 rounded-full border-2 border-wiki-accent border-t-transparent animate-spin" />
+            </div>
+            <span className="text-wiki-text2 text-base font-medium">Coming...</span>
+          </div>
+        </div>
+      )}
 
       {/* Profile Wizard — full-screen overlay for first-time setup */}
     </div>

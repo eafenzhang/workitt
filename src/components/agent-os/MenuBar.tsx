@@ -65,7 +65,12 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
     >
       {/* ── Left: Apple logo + menu items (no-drag for click) ── */}
       <div className="flex items-center h-full gap-4 pl-3 flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
-        <img src={APP_ICON} alt="Workitt" className="w-4 h-4 object-contain" />
+        <img
+          src={APP_ICON}
+          alt="Workitt"
+          className="w-4 h-4 object-contain cursor-pointer"
+          onClick={() => window.dispatchEvent(new CustomEvent('trigger-update-check'))}
+        />
         {MENU_ITEMS.map((item) => {
           if (item === 'Workitt') {
             return (

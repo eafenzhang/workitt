@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { SunIcon, MoonIcon, MonitorIcon, RefreshCwIcon, CogIcon, Trash2Icon, PaletteIcon, InfoIcon, BotIcon } from 'lucide-react';
 import { APP_ICON } from '../constants/icon';
-import { checkBackendStatus, getCowAgentConfig, getCowAgentVersion } from '../api/cowagent';
+import { checkBackendStatus, getCowAgentConfig, getCowAgentVersion, saveCowAgentConfig } from '../api/cowagent';
 import { toast } from 'sonner';
 
 export default function Settings() {
@@ -17,6 +17,7 @@ export default function Settings() {
     const poll = () => {
       checkBackendStatus().then(s => setCowStatus(s));
       getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
+      getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
     };
     poll();
     const timer = setInterval(poll, 5000); // poll every 5s
@@ -30,6 +31,8 @@ export default function Settings() {
   });
   const [currentVersion, setCurrentVersion] = useState('1.0.0');
   const [updatingCowAgent, setUpdatingCowAgent] = useState(false);
+  const [cowConfig, setCowConfig] = useState<Record<string, any> | null>(null);
+  const [cowSaving, setCowSaving] = useState(false);
 
   const api = window.electronAPI;
 
@@ -55,6 +58,24 @@ export default function Settings() {
       setUpdatingCowAgent(false);
     }
   }, []);
+
+  const handleSaveCowConfig = useCallback(async () => {
+    if (!cowConfig) return;
+    setCowSaving(true);
+    try {
+      const ok = await saveCowAgentConfig(cowConfig);
+      if (ok) {
+        toast.success('CowAgent 配置已保存');
+        getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
+      } else {
+        toast.error('保存配置失败');
+      }
+    } catch {
+      toast.error('保存异常');
+    } finally {
+      setCowSaving(false);
+    }
+  }, [cowConfig]);
 
   useEffect(() => {
     api?.getVersion?.().then((v: string) => { if (v) setCurrentVersion(v); }).catch(() => {});
@@ -200,6 +221,7 @@ export default function Settings() {
                 <button onClick={() => {
                   checkBackendStatus().then(s => setCowStatus(s));
                   getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
+                  getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
                 }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
                   <RefreshCwIcon size={12} />刷新
                 </button>
@@ -208,6 +230,37 @@ export default function Settings() {
                   style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
                   <RefreshCwIcon size={12} className={updatingCowAgent ? 'animate-spin' : ''} />
                   {updatingCowAgent ? '更新中...' : '后端更新'}
+                </button>
+              </div>
+            </div>
+
+            {/* 4 CowAgent toggle switches */}
+            <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--wiki-border)' }}>
+              <div className="text-xs font-semibold mb-3" style={{ color: 'var(--wiki-text2)' }}>引擎配置</div>
+              <div className="flex flex-col gap-3">
+                {[
+                  { key: 'agent', label: '启用 Agent', desc: '启用 CowAgent 智能体核心功能' },
+                  { key: 'knowledge', label: '知识库', desc: '启用知识库检索增强（RAG）' },
+                  { key: 'self_evolution_enabled', label: '自我进化', desc: '根据反馈自动优化行为策略' },
+                  { key: 'enable_thinking', label: '深度思考', desc: '启用深度推理链输出，提升回答质量' },
+                ].map(item => (
+                  <div key={item.key} className="flex items-center justify-between">
+                    <div>
+                      <div className="text-sm font-medium text-wiki-text">{item.label}</div>
+                      <div className="text-xs text-wiki-text3 mt-0.5">{item.desc}</div>
+                    </div>
+                    <Toggle
+                      value={cowConfig?.[item.key] === true || cowConfig?.[item.key] === 'true'}
+                      onChange={(v) => setCowConfig(prev => ({ ...prev, [item.key]: v }))}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end mt-3">
+                <button onClick={handleSaveCowConfig} disabled={cowSaving || !cowConfig}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
+                  style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
+                  {cowSaving ? '保存中...' : '保存配置'}
                 </button>
               </div>
             </div>

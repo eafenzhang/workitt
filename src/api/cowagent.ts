@@ -280,6 +280,17 @@ export async function getCowAgentConfig(): Promise<Record<string, unknown> | nul
   } catch { return null }
 }
 
+export async function saveCowAgentConfig(config: Record<string, unknown>): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/config`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    })
+    return r.ok
+  } catch { return false }
+}
+
 export async function getCowAgentVersion(): Promise<string> {
   try {
     const r = await fetch(`${API_BASE}/api/version`)
@@ -377,6 +388,28 @@ export async function getMemoryContent(filename: string, category = 'memory'): P
   } catch { return '' }
 }
 
+export async function updateMemoryContent(filename: string, content: string, category = 'memory'): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/api/memory/content`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, content, category }),
+    })
+    return (await r.json()).status === 'success'
+  } catch { return false }
+}
+
+export async function deleteMemory(filename: string, category = 'memory'): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/api/memory`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename, category }),
+    })
+    return (await r.json()).status === 'success'
+  } catch { return false }
+}
+
 // ─── Scheduler ─────────────────────────────────────────────
 
 export interface TaskInfo {
@@ -404,6 +437,39 @@ export async function createSchedulerTask(name: string, cron: string, prompt: st
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ action: 'create', name, cron, prompt }),
+    })
+    return (await r.json()).status === 'success'
+  } catch { return false }
+}
+
+export async function updateSchedulerTask(id: string, name: string, cron: string, prompt: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/api/scheduler`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'update', id, name, cron, prompt }),
+    })
+    return (await r.json()).status === 'success'
+  } catch { return false }
+}
+
+export async function deleteSchedulerTask(id: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/api/scheduler`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', id }),
+    })
+    return (await r.json()).status === 'success'
+  } catch { return false }
+}
+
+export async function toggleSchedulerTask(id: string): Promise<boolean> {
+  try {
+    const r = await fetch(`${API_BASE}/api/scheduler`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'toggle', id }),
     })
     return (await r.json()).status === 'success'
   } catch { return false }

@@ -26,7 +26,7 @@ const DEFAULT_CATALOG = [
 
 const sourceLabels: Record<string, string> = { 'built-in': '内置', 'marketplace': '市场', 'custom': '自定义', 'url': 'URL' };
 
-export default function CliToolsTab({ hideToolbar }: { hideToolbar?: boolean }) {
+export default function CliToolsTab({ hideToolbar, onRenderActions }: { hideToolbar?: boolean; onRenderActions?: (actions: React.ReactNode) => void }) {
   const [items, setItems] = useState<CliItem[]>([]);
   const [installStatus, setInstallStatus] = useState<Record<string, boolean>>({});
   const [installing, setInstalling] = useState<Record<string, boolean>>({});
@@ -40,6 +40,17 @@ export default function CliToolsTab({ hideToolbar }: { hideToolbar?: boolean }) 
   useEffect(() => {
     if (items.length > 0) checkAllInstallStatus();
   }, [items.length]);
+
+  // Expose a "CLI" action button to the page header
+  useEffect(() => {
+    onRenderActions?.(
+      <button onClick={() => { setAddForm({ name: '', description: '', configJson: '{}' }); setShowAddForm(true); }}
+        className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-medium"
+        style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
+        <TerminalIcon size={14} />CLI
+      </button>
+    );
+  }, [onRenderActions]);
 
   const fetchItems = () => {
     apiFetch(API.cliTools).then(r => r.json()).then(data => {

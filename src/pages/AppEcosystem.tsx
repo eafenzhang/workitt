@@ -30,9 +30,9 @@ export default function AppEcosystem() {
   const renderContent = () => {
     switch (activeTab) {
       case 'mcp':       return <MCPTab key={`mcp-${refreshKey}`} hideToolbar onRenderActions={handleRenderActions} />;
-      case 'cli':       return <CliToolsTab key={`cli-${refreshKey}`} hideToolbar />;
-      case 'skills':    return <SkillsTab key={`skills-${refreshKey}`} hideToolbar />;
-      case 'plugins':   return <PluginsTab key={`plugins-${refreshKey}`} hideToolbar />;
+      case 'cli':       return <CliToolsTab key={`cli-${refreshKey}`} hideToolbar onRenderActions={handleRenderActions} />;
+      case 'skills':    return <SkillsTab key={`skills-${refreshKey}`} hideToolbar onRenderActions={handleRenderActions} />;
+      case 'plugins':   return <PluginsTab key={`plugins-${refreshKey}`} hideToolbar onRenderActions={handleRenderActions} />;
       default:          return <EmptyState icon={WrenchIcon} title="选择工具" description="从左侧选择一个工具类别" />;
     }
   };

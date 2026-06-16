@@ -16,6 +16,12 @@ function AppIcon({ gradient, Icon, iconColor, size: s = 44 }: {
   const id = `g-${gradient[0].slice(1)}-${gradient[1].slice(1)}`;
   return (
     <svg width={s} height={s} viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <linearGradient id={id} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={gradient[0]} />
+          <stop offset="100%" stopColor={gradient[1]} />
+        </linearGradient>
+      </defs>
       <rect x="0" y="0" width="48" height="48" rx="11.5" fill={`url(#${id})`} />
       <foreignObject x="10" y="10" width="28" height="28">
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>

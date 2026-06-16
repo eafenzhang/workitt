@@ -22,8 +22,14 @@ function readDockBehavior(): DockBehavior {
  * DesktopArea's bottom padding adjusts per dock state so maximized windows
  * correctly fill the full canvas when the dock is hidden or floating.
  */
-export default function AgentOSDesktop() {
-  const { toggleOSMode, state, openBrowserWithUrl } = useAgentOS();
+interface AgentOSDesktopProps {
+  /** Optional toggle callback override — when provided, used instead of context toggleOSMode */
+  onToggleOSMode?: () => void;
+}
+
+export default function AgentOSDesktop({ onToggleOSMode: externalToggle }: AgentOSDesktopProps) {
+  const { toggleOSMode: contextToggle, state, openBrowserWithUrl } = useAgentOS();
+  const toggleOSMode = externalToggle || contextToggle;
 
   const [showFinder, setShowFinder] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
