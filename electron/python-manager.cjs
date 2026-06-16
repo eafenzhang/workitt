@@ -146,6 +146,64 @@ class PythonManager {
   }
 
   /**
+   * Check if Python is available on the system.
+   */
+  async _checkPython() {
+    try {
+      const { execSync } = require('child_process');
+      execSync('python --version', { stdio: 'pipe', timeout: 5000 });
+      return true;
+    } catch {
+      try {
+        const { execSync } = require('child_process');
+        execSync('python3 --version', { stdio: 'pipe', timeout: 5000 });
+        return true;
+      } catch {
+        return false;
+      }
+    }
+  }
+
+  /**
+   * Install CowAgent Python dependencies if needed.
+   */
+  async _ensureDependencies(backendDir) {
+    const reqFile = path.join(backendDir, 'requirements.txt');
+    if (!fs.existsSync(reqFile)) {
+      log('No requirements.txt found, skipping dependency install');
+      return true;
+    }
+
+    try {
+      const { execSync } = require('child_process');
+      log('Checking CowAgent Python dependencies...');
+      execSync('python -m pip install -r "' + reqFile + '" --quiet', {
+        cwd: backendDir,
+        stdio: 'pipe',
+        timeout: 120000,
+      });
+      log('CowAgent Python dependencies installed');
+      return true;
+    } catch (e) {
+      log('Failed to install Python dependencies: ' + (e.message || e));
+      // Try with --user flag as fallback
+      try {
+        const { execSync } = require('child_process');
+        execSync('python -m pip install -r "' + reqFile + '" --quiet --user', {
+          cwd: backendDir,
+          stdio: 'pipe',
+          timeout: 120000,
+        });
+        log('CowAgent Python dependencies installed (--user)');
+        return true;
+      } catch (e2) {
+        log('Failed to install Python dependencies (--user): ' + (e2.message || e2));
+        return false;
+      }
+    }
+  }
+
+  /**
    * Start the CowAgent Python backend.
    * Returns a promise that resolves when the backend is ready.
    */
@@ -158,6 +216,14 @@ class PythonManager {
     this._exiting = false;
     this._ready = false;
 
+    // Check Python availability
+    const pythonOk = await this._checkPython();
+    if (!pythonOk) {
+      log('Python is not installed or not in PATH. CowAgent backend cannot start.');
+      log('Please install Python 3.10+ from https://www.python.org/downloads/');
+      return;
+    }
+
     // Kill stale backend on the target port
     await this._killExistingPort(this._port);
 
@@ -166,6 +232,11 @@ class PythonManager {
     if (!backendDir) {
       // Try `python -m cowagent` as fallback
       log('CowAgent not found locally, trying `python -m cowagent`');
+    }
+
+    // Auto-install dependencies if backend dir found
+    if (backendDir) {
+      await this._ensureDependencies(backendDir);
     }
 
     return new Promise((resolve, reject) => {
