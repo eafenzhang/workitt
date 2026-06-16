@@ -126,7 +126,16 @@ export default function DockBar({
       const item = DOCK_ITEMS.find((d) => d.type === type);
       if (!item) return;
       if (type === 'browser') {
-        openNewBrowserWindow();
+        const existingBrowser = windows.find((w: OSWindow) => w.type === 'browser');
+        if (existingBrowser) {
+          if (existingBrowser.isMinimized) {
+            focusWindow(existingBrowser.id);
+          } else {
+            minimizeWindow(existingBrowser.id);
+          }
+        } else {
+          openNewBrowserWindow();
+        }
         return;
       }
       const existing = windows.find((w: OSWindow) => w.type === type);

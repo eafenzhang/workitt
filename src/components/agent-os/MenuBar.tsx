@@ -26,9 +26,9 @@ interface MenuBarProps {
 }
 
 /**
- * Top menu bar (32px) — macOS-style with Workit logo, menu items,
+ * Top menu bar (40px) — macOS-style with Workit logo, menu items,
  * centered clock, OS toggle, fullscreen toggle, and window controls.
- * The area between menu items and clock is draggable for window reposition.
+ * Height and icon sizes match app-mode TitleBar for consistency.
  */
 export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpenSettings }: MenuBarProps) {
   const [time, setTime] = useState<string>(() =>
@@ -55,7 +55,7 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
 
   return (
     <div
-      className="glass flex items-center h-8 flex-shrink-0 select-none relative"
+      className="glass flex items-center h-10 flex-shrink-0 select-none relative"
       style={{
         borderBottom: '1px solid var(--wiki-border)',
         fontSize: '13px',
@@ -112,35 +112,35 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
         </span>
       </div>
 
-      {/* ── Right: window controls (no-drag) ── */}
-      <div className="flex items-center h-full pr-1 flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
+      {/* ── Right: window controls (no-drag) — width/icons match TitleBar ── */}
+      <div className="flex h-full flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleOSMode(); }}
-          className="w-8 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
+          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
           title="切换应用模式"
           aria-label="切换应用模式"
         >
-          {isOSMode ? <LayoutGridIcon size={14} style={{ color: 'var(--wiki-text2)' }} /> : <MonitorIcon size={14} style={{ color: 'var(--wiki-text2)' }} />}
+          {isOSMode ? <LayoutGridIcon size={15} style={{ color: 'var(--wiki-text2)' }} /> : <MonitorIcon size={15} style={{ color: 'var(--wiki-text2)' }} />}
         </button>
         <button
           onClick={() => getAPI()?.setFullScreen?.(!fullscreen)}
-          className="w-8 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
+          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
           title={fullscreen ? '退出全屏' : '全屏模式'}
           aria-label="全屏"
         >
-          {fullscreen ? <Minimize2Icon size={13} style={{ color: 'var(--wiki-text2)' }} /> : <Maximize2Icon size={13} style={{ color: 'var(--wiki-text2)' }} />}
+          {fullscreen ? <Minimize2Icon size={15} style={{ color: 'var(--wiki-text2)' }} /> : <Maximize2Icon size={15} style={{ color: 'var(--wiki-text2)' }} />}
         </button>
-        <button onClick={() => getAPI()?.minimize?.()} className="w-8 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最小化">
+        <button onClick={() => getAPI()?.minimize?.()} className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最小化">
           <svg width="10" height="10" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="var(--wiki-text2)"/></svg>
         </button>
-        <button onClick={() => getAPI()?.maximize?.()} className="w-8 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最大化">
+        <button onClick={() => getAPI()?.maximize?.()} className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最大化">
           {maximized ? (
             <svg width="11" height="11" viewBox="0 0 13 13"><rect x="2.5" y="0.5" width="9" height="9" rx="1" fill="var(--wiki-surface)" stroke="var(--wiki-text2)" strokeWidth="0.8"/><rect x="0.5" y="2.5" width="9" height="9" rx="1" fill="var(--wiki-surface)" stroke="var(--wiki-text2)" strokeWidth="1.2"/></svg>
           ) : (
             <svg width="10" height="10" viewBox="0 0 13 13"><rect x="1" y="1" width="11" height="11" rx="1" fill="none" stroke="var(--wiki-text2)" strokeWidth="1.2"/></svg>
           )}
         </button>
-        <button onClick={() => getAPI()?.close?.()} className="w-8 h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors" aria-label="关闭">
+        <button onClick={() => getAPI()?.close?.()} className="w-11 h-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors" aria-label="关闭">
           <svg width="12" height="12" viewBox="0 0 13 13"><line x1="2" y1="2" x2="11" y2="11" stroke="currentColor" strokeWidth="1.2"/><line x1="11" y1="2" x2="2" y2="11" stroke="currentColor" strokeWidth="1.2"/></svg>
         </button>
       </div>

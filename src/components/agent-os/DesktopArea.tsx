@@ -61,6 +61,23 @@ export default function DesktopArea({
     return () => window.removeEventListener('agent-os-wallpaper-changed', handler);
   }, []);
 
+  // Auto-switch wallpaper when theme (dark/light) changes — only if no custom wallpaper set
+  useEffect(() => {
+    const checkTheme = () => {
+      const current = loadWallpaper();
+      // Only auto-switch if no custom wallpaper was set by user
+      const stored = localStorage.getItem(LS_WALLPAPER_KEY);
+      if (stored) return; // user has custom wallpaper, respect it
+      const isDark = document.documentElement.classList.contains('dark');
+      const autoWallpaper = isDark ? '#1a1a1f' : '#e8e6e1';
+      setWallpaper({ type: 'color', value: autoWallpaper });
+    };
+    checkTheme();
+    const observer = new MutationObserver(checkTheme);
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, []);
+
   const bgStyle =
     wallpaper.type === 'image'
       ? {

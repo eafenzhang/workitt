@@ -27,7 +27,7 @@ function AppIcon({ gradient, Icon, iconColor, size: s = 44 }: {
       <rect x="0.5" y="0.5" width="47" height="47" rx="11" stroke="white" strokeOpacity="0.12" />
       <foreignObject x="8" y="8" width="32" height="32">
         <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Icon size={20} strokeWidth={1.8} style={{ color: iconColor }} />
+          <Icon size={22} strokeWidth={2.8} style={{ color: iconColor }} fill={iconColor} />
         </div>
       </foreignObject>
     </svg>
