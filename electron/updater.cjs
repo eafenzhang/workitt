@@ -5,6 +5,25 @@ const { getMainWindow, getQCWindow } = require('./window.cjs');
 
 const isDev = process.defaultApp || /electron/.test(process.argv[0]);
 const GITHUB_API = 'https://api.github.com/repos/eafenzhang/Workitt/releases/latest';
+const GITHUB_TOKEN = process.env.GH_TOKEN || process.env.GITHUB_TOKEN || '';
+
+function githubHeaders() {
+  const h = { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' };
+  if (GITHUB_TOKEN) h['Authorization'] = 'token ' + GITHUB_TOKEN;
+  return h;
+}
+
+// Semver compare: returns true if vA > vB
+function semverGt(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const na = pa[i] || 0, nb = pb[i] || 0;
+    if (na > nb) return true;
+    if (na < nb) return false;
+  }
+  return false;
+}
 
 // Broadcast to all renderer windows
 function broadcast(channel, payload) {
@@ -24,7 +43,7 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 async function checkGitHubRelease() {
   try {
     const resp = await fetch(GITHUB_API, {
-      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
+      headers: githubHeaders(),
       signal: AbortSignal.timeout(15000),
     });
     if (!resp.ok) return { available: false, error: 'GitHub API错误: HTTP ' + resp.status, current: app.getVersion() };
@@ -32,7 +51,7 @@ async function checkGitHubRelease() {
     const tag = (release.tag_name || '').replace(/^v/, '');
     const current = app.getVersion();
     if (!tag) return { available: false, current };
-    const isNewer = tag !== current;
+    const isNewer = semverGt(tag, current);
     return {
       available: isNewer,
       version: tag,
@@ -47,7 +66,7 @@ async function checkGitHubRelease() {
 // Download installer from GitHub releases with progress
 async function downloadFromGitHub() {
   const resp = await fetch(GITHUB_API, {
-    headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
+    headers: githubHeaders(),
     signal: AbortSignal.timeout(15000),
   });
   if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
@@ -153,7 +172,7 @@ function setupAutoUpdater() {
           const current = app.getVersion();
           if (r?.updateInfo?.version) {
             const v = r.updateInfo.version;
-            return { available: v !== current, version: v, current };
+            return { available: semverGt(v, current), version: v, current };
           }
           return { available: false, current };
         } catch (e) {

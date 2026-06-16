@@ -45,6 +45,24 @@ app.whenReady().then(async () => {
 
     mainWindow = createWindow(preloadPath);
     setupIPC(mainWindow, db);
+    // Try to populate GitHub token for updater (from git credential store)
+    try {
+      const { execSync } = require('child_process');
+      const out = execSync('git credential fill', {
+        input: 'protocol=https\nhost=github.com\n\n',
+        encoding: 'utf-8',
+        timeout: 5000,
+        windowsHide: true,
+      });
+      const match = out.match(/^password=(.+)$/m);
+      if (match) {
+        const token = match[1].trim();
+        if (token && !process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+          process.env.GH_TOKEN = token;
+          log('Updater: loaded GitHub token from credential store');
+        }
+      }
+    } catch (e) { /* credential read is best-effort */ }
     setupAutoUpdater();
     startMemoryConsolidator(db);
     startSkillGenerator(db);

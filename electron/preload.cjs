@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Auto-update
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadUpdate: () => ipcRenderer.invoke('download-update'),
-  installUpdate: () => ipcRenderer.invoke('install-update'),
+  installUpdate: (installerPath) => ipcRenderer.invoke('install-update', installerPath),
   // Unified update event subscriber — returns unsubscribe function
   onUpdateEvent: (cb) => {
     const channels = ['update:checking','update:available','update:not-available','update:progress','update:downloaded','update:error',

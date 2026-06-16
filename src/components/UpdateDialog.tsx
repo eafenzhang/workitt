@@ -82,7 +82,12 @@ export default function UpdateDialog() {
     setError('');
     try {
       const r = await api?.downloadUpdate?.();
-      if (r?.ok && r?.installerPath) setInstallerPath(r.installerPath);
+      if (r?.ok && r?.installerPath) {
+        setInstallerPath(r.installerPath);
+      } else {
+        setError(r?.error || '下载失败');
+        setPhase('error');
+      }
     } catch (e: any) {
       setError(e?.message || '下载失败');
       setPhase('error');
