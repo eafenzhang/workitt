@@ -112,9 +112,6 @@
       "owner": "eafenzhang",
       "repo": "Workitt",
       "releaseType": "release"
-    },
-    "directories": {
-      "output": "release"
     }
   }
 }

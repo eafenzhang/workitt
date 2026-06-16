@@ -103,27 +103,38 @@ async function downloadWithHttp(downloadUrl, tag) {
         const redirectUrl = res.headers.location.startsWith('http')
           ? res.headers.location
           : require('url').resolve(downloadUrl, res.headers.location);
-        log('Updater: following redirect to ' + redirectUrl);
+        log('Updater: redirect (' + res.statusCode + ') to ' + redirectUrl);
         res.resume(); // Drain the response
         return resolve(downloadWithHttp(redirectUrl, tag));
       }
       if (res.statusCode !== 200) {
         res.resume();
+        log('Updater: unexpected status ' + res.statusCode);
         return resolve({ ok: false, error: '下载失败 HTTP ' + res.statusCode });
       }
 
       const total = parseInt(res.headers['content-length'] || '0');
+      log('Updater: connected, size=' + total + ' bytes');
       let downloaded = 0;
       const chunks = [];
       const startTime = Date.now();
+      let lastBroadcast = 0;
 
       res.on('data', (chunk) => {
         chunks.push(chunk);
         downloaded += chunk.length;
-        if (total > 0) {
-          const pct = Math.round(downloaded / total * 100);
-          const speed = downloaded / ((Date.now() - startTime) / 1000);
-          broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
+        const now = Date.now();
+        // Broadcast progress at most every 200ms to avoid flooding
+        if (now - lastBroadcast > 200) {
+          lastBroadcast = now;
+          const pct = total > 0 ? Math.round(downloaded / total * 100) : 0;
+          const speed = downloaded / ((now - startTime) / 1000);
+          broadcast('update:progress', {
+            percent: pct,
+            transferred: downloaded,
+            total: total || downloaded,
+            bytesPerSecond: Math.round(speed),
+          });
         }
       });
 

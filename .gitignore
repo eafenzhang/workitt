@@ -40,3 +40,6 @@ UPDATE_MEMORY.md
 workit.db
 workit/
 build-installer/
+dist-installer/
+release-old-*
+release.stuck
