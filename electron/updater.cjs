@@ -24,7 +24,7 @@ const CHECK_INTERVAL_MS = 4 * 60 * 60 * 1000;
 async function checkGitHubRelease() {
   try {
     const resp = await fetch(GITHUB_API, {
-      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workit-Updater' },
+      headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
       signal: AbortSignal.timeout(15000),
     });
     if (!resp.ok) return { available: false, error: 'GitHub API错误: HTTP ' + resp.status, current: app.getVersion() };
@@ -44,46 +44,50 @@ async function checkGitHubRelease() {
   }
 }
 
+// Download installer from GitHub releases with progress
+async function downloadFromGitHub() {
+  const resp = await fetch(GITHUB_API, {
+    headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
+  const release = await resp.json();
+  const tag = release.tag_name || '';
+  const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
+  if (!asset) return { ok: false, error: '未找到安装包' };
+  log('Updater: downloading from ' + asset.browser_download_url);
+  const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
+  if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
+  const total = parseInt(dlResp.headers.get('content-length') || '0');
+  let downloaded = 0;
+  const reader = dlResp.body.getReader();
+  const chunks = [];
+  const startTime = Date.now();
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    chunks.push(value);
+    downloaded += value.length;
+    if (total > 0) {
+      const pct = Math.round(downloaded / total * 100);
+      const speed = downloaded / ((Date.now() - startTime) / 1000);
+      broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
+    }
+  }
+  const { writeFileSync } = require('fs');
+  const { join } = require('path');
+  const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
+  writeFileSync(installerPath, Buffer.concat(chunks));
+  broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
+  log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
+  return { ok: true, installerPath };
+}
+
 function setupAutoUpdater() {
-  // ── Register download & install handlers FIRST (always available, even without electron-updater) ──
+  // ── Register handlers OUTSIDE electron-updater try block (always available) ──
   ipcMain.handle('download-update', async () => {
     try {
-      // Always download directly from GitHub releases
-      const resp = await fetch(GITHUB_API, {
-        headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' },
-        signal: AbortSignal.timeout(15000),
-      });
-      if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
-      const release = await resp.json();
-      const tag = release.tag_name || '';
-      const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
-      if (!asset) return { ok: false, error: '未找到安装包' };
-      log('Updater: downloading from ' + asset.browser_download_url);
-      const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
-      if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
-      const total = parseInt(dlResp.headers.get('content-length') || '0');
-      let downloaded = 0;
-      const reader = dlResp.body.getReader();
-      const chunks = [];
-      const startTime = Date.now();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-        downloaded += value.length;
-        if (total > 0) {
-          const pct = Math.round(downloaded / total * 100);
-          const speed = downloaded / ((Date.now() - startTime) / 1000);
-          broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
-        }
-      }
-      const { writeFileSync } = require('fs');
-      const { join } = require('path');
-      const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
-      writeFileSync(installerPath, Buffer.concat(chunks));
-      broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
-      log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
-      return { ok: true, installerPath };
+      return await downloadFromGitHub();
     } catch (e) {
       log('Updater: download failed', e);
       return { ok: false, error: e.message || '下载失败' };
@@ -96,76 +100,52 @@ function setupAutoUpdater() {
       exec('start "" "' + installerPath + '"', () => app.quit());
       return true;
     }
-    if (_updater) { autoUpdater.quitAndInstall(); return true; }
     return false;
   });
 
-  // ── Default check handler — uses GitHub API fallback ──
+  // ── Check handler — default GitHub API fallback ──
   let updateHandler = checkGitHubRelease;
   ipcMain.handle('check-for-update', async () => updateHandler());
 
   if (isDev) { log('AutoUpdater: dev mode, using GitHub API fallback'); return; }
 
+  // ── Try to use electron-updater for checking (optional) ──
   try {
     const { autoUpdater } = require('electron-updater');
     _updater = autoUpdater;
-
     if (!autoUpdater.currentVersion) {
       log('AutoUpdater: no update feed, using GitHub API fallback');
       return;
     }
-  } catch {
-    log('AutoUpdater: app-update.yml not found, using GitHub API fallback');
-    return;
-  }
-
-  // ── electron-updater available — set up full update flow ──
-  autoUpdater.autoDownload = false;
-  autoUpdater.autoInstallOnAppQuit = true;
-  autoUpdater.allowDowngrade = false;
-  autoUpdater.allowPrerelease = false;
-
-  autoUpdater.logger = {
-    debug: () => {},
-    info: (m) => log('Updater: ' + m),
-    warn: (m) => log('Updater warn: ' + m),
-    error: (m) => log('Updater error: ' + m),
-  };
-
-  autoUpdater.on('checking-for-update', () => {
-    log('Updater: checking...');
-    broadcast('update:checking');
-  });
-
-  autoUpdater.on('update-available', (info) => {
-    log('Updater: v' + info.version + ' available');
-    broadcast('update:available', {
-      version: info.version,
-      currentVersion: app.getVersion(),
-      releaseNotes: (info.releaseNotes || info.releaseName || '').replace(/<[^>]+>/g, ''),
+    autoUpdater.autoDownload = false;
+    autoUpdater.autoInstallOnAppQuit = true;
+    autoUpdater.allowDowngrade = false;
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.logger = {
+      debug: () => {},
+      info: (m) => log('Updater: ' + m),
+      warn: (m) => log('Updater warn: ' + m),
+      error: (m) => log('Updater error: ' + m),
+    };
+    autoUpdater.on('checking-for-update', () => { log('Updater: checking...'); broadcast('update:checking'); });
+    autoUpdater.on('update-available', (info) => {
+      log('Updater: v' + info.version + ' available');
+      broadcast('update:available', { version: info.version, currentVersion: app.getVersion(), releaseNotes: (info.releaseNotes || info.releaseName || '').replace(/<[^>]+>/g, '') });
     });
-  });
-
-  autoUpdater.on('update-not-available', () => {
-    log('Updater: already latest');
-    broadcast('update:not-available');
-  });
-
-  autoUpdater.on('download-progress', (p) => {
-    broadcast('update:progress', { percent: Math.round(p.percent), transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond });
-  });
-
+    autoUpdater.on('update-not-available', () => { log('Updater: already latest'); broadcast('update:not-available'); });
+    autoUpdater.on('download-progress', (p) => {
+      broadcast('update:progress', { percent: Math.round(p.percent), transferred: p.transferred, total: p.total, bytesPerSecond: p.bytesPerSecond });
+    });
     autoUpdater.on('update-downloaded', (info) => {
       log('Updater: v' + info.version + ' downloaded, ready to install');
       broadcast('update:downloaded', { version: info.version });
     });
-
     autoUpdater.on('error', (e) => {
       log('Updater error: ' + (e.message || e));
       broadcast('update:error', { message: e.message || 'Unknown error' });
     });
 
-    // Replace fallback handler with real electron-updater handler
+    // Replace fallback check handler with electron-updater one
     updateHandler = async () => {
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
@@ -191,60 +171,7 @@ function setupAutoUpdater() {
       return checkGitHubRelease();
     };
 
-    ipcMain.handle('download-update', async () => {
-      try {
-        // Always download directly from GitHub releases (reliable, avoids electron-updater 0% issue)
-        const resp = await fetch(GITHUB_API, { headers: { 'Accept': 'application/vnd.github.v3+json', 'User-Agent': 'Workitt-Updater' }, signal: AbortSignal.timeout(15000) });
-        if (!resp.ok) return { ok: false, error: 'GitHub API ' + resp.status };
-        const release = await resp.json();
-        const tag = release.tag_name || '';
-        // Find the .exe asset (prefer setup exe)
-        const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
-        if (!asset) return { ok: false, error: '未找到安装包' };
-        log('Updater: downloading from ' + asset.browser_download_url);
-        // Download with progress streaming
-        const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
-        if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
-        const total = parseInt(dlResp.headers.get('content-length') || '0');
-        let downloaded = 0;
-        const reader = dlResp.body.getReader();
-        const chunks = [];
-        const startTime = Date.now();
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          chunks.push(value);
-          downloaded += value.length;
-          if (total > 0) {
-            const pct = Math.round(downloaded / total * 100);
-            const speed = downloaded / ((Date.now() - startTime) / 1000);
-            broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
-          }
-        }
-        const { writeFileSync } = require('fs');
-        const { join } = require('path');
-        const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
-        writeFileSync(installerPath, Buffer.concat(chunks));
-        broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
-        log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
-        return { ok: true, installerPath };
-      } catch (e) {
-        log('Updater: download failed', e);
-        return { ok: false, error: e.message || '下载失败' };
-      }
-    });
-
-    ipcMain.handle('install-update', (_, installerPath) => {
-      if (installerPath) {
-        const { exec } = require('child_process');
-        exec('start "" "' + installerPath + '"', () => app.quit());
-        return true;
-      }
-      if (_updater) { autoUpdater.quitAndInstall(); return true; }
-      return false;
-    });
-
-    // ── Retry helper for update checks ──
+    // ── Startup auto-check with retry ──
     const checkWithRetry = (label, maxRetries = 3) => {
       let attempts = 0;
       const tryCheck = () => {
@@ -253,7 +180,7 @@ function setupAutoUpdater() {
         autoUpdater.checkForUpdates().catch(e => {
           log('Updater: ' + label + ' failed (attempt ' + attempts + '): ' + (e.message || e));
           if (attempts < maxRetries) {
-            const delay = attempts * 30000; // 30s, 60s, 90s backoff
+            const delay = attempts * 30000;
             log('Updater: retrying in ' + (delay/1000) + 's');
             setTimeout(tryCheck, delay);
           }
@@ -262,17 +189,12 @@ function setupAutoUpdater() {
       tryCheck();
     };
 
-    // ── Startup: delayed auto-check + download (with retry) ──
     setTimeout(() => checkWithRetry('startup check'), 15000);
-
-    // ── Periodic check every 4 hours ──
     _checkTimer = setInterval(() => checkWithRetry('periodic check'), CHECK_INTERVAL_MS);
-
     log('AutoUpdater: initialized');
   } catch (e) { log('AutoUpdater init failed', e); }
 }
 
-// Cleanup on app quit
 function teardownAutoUpdater() {
   if (_checkTimer) { clearInterval(_checkTimer); _checkTimer = null; }
 }
