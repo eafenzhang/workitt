@@ -14,12 +14,12 @@ const POLL_INTERVAL_MS = 500;
 // ── Helpers ────────────────────────────────────────────────────
 
 function log(msg, err) {
+  const line = `[PythonManager] ${msg}${err ? ': ' + (err.message || err) : ''}`;
   try {
-    const line = `[PythonManager] ${msg}${err ? ': ' + (err.message || err) : ''}`;
     const { log: logFn } = require('./database.cjs');
     logFn(line);
   } catch {
-    console.error(line || `[PythonManager] ${msg}`, err || '');
+    console.error(line);
   }
 }
 

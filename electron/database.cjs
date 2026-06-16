@@ -287,6 +287,62 @@ function initDatabase(userDataPath) {
     log('initDatabase: migration v4 complete (workflows + workflow_executions)');
   }
 
+  // ── v5: ai_feedback table ──
+  // Always attempt creation (handles fresh DBs and DBs that skipped v5 due to ordering bug)
+  db.exec(`CREATE TABLE IF NOT EXISTS ai_feedback (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    message_id TEXT DEFAULT '',
+    conversation_id TEXT DEFAULT '',
+    type TEXT NOT NULL,
+    rating INTEGER DEFAULT 0,
+    comment TEXT DEFAULT '',
+    context TEXT DEFAULT '',
+    created_at TEXT DEFAULT (datetime('now','localtime'))
+  )`);
+  db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_type ON ai_feedback(type)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_created ON ai_feedback(created_at)');
+  if (currentVersion < 5) {
+    db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (5)");
+    currentVersion = 5;
+    log('initDatabase: migration v5 complete (ai_feedback)');
+  } else {
+    // Ensure schema_version has v5 recorded for databases that skipped it
+    const hasV5 = db.prepare("SELECT COUNT(*) FROM schema_version WHERE version=5").raw().get()?.[0] || 0;
+    if (!hasV5) {
+      db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (5)");
+      log('initDatabase: migration v5 recorded (ai_feedback)');
+    }
+  }
+
+  // ── v6: user_profile table ──
+  // Always attempt table creation (handles DBs that skipped v6 due to ordering bug)
+  db.exec(`CREATE TABLE IF NOT EXISTS user_profile (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    nickname TEXT NOT NULL DEFAULT '',
+    role TEXT NOT NULL DEFAULT '',
+    avatar TEXT DEFAULT '',
+    personality TEXT DEFAULT '',
+    memory_skills TEXT DEFAULT '',
+    avatar_color TEXT DEFAULT '#6366f1',
+    updated_at TEXT DEFAULT (datetime('now','localtime'))
+  )`);
+  // Seed with default if empty
+  const hasProfile = db.prepare('SELECT COUNT(*) FROM user_profile').raw().get()?.[0] || 0;
+  if (hasProfile === 0) {
+    db.exec("INSERT INTO user_profile (id, nickname, role, personality, memory_skills) VALUES (1, '', '', '', '')");
+  }
+  if (currentVersion < 6) {
+    db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (6)");
+    currentVersion = 6;
+    log('initDatabase: migration v6 complete (user_profile)');
+  } else {
+    const hasV6 = db.prepare("SELECT COUNT(*) FROM schema_version WHERE version=6").raw().get()?.[0] || 0;
+    if (!hasV6) {
+      db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (6)");
+      log('initDatabase: migration v6 recorded (user_profile)');
+    }
+  }
+
   // ── v7: balance column for models ──
   if (currentVersion < 7) {
     try {
@@ -297,47 +353,6 @@ function initDatabase(userDataPath) {
     } catch (e) {
       if (!String(e.message||'').includes('duplicate column')) console.error('[db] v7 migration failed:', e.message);
     }
-  }
-
-  // ── v6: user_profile table ──
-  if (currentVersion < 6) {
-    db.exec(`CREATE TABLE IF NOT EXISTS user_profile (
-      id INTEGER PRIMARY KEY DEFAULT 1,
-      nickname TEXT NOT NULL DEFAULT '',
-      role TEXT NOT NULL DEFAULT '',
-      avatar TEXT DEFAULT '',
-      personality TEXT DEFAULT '',
-      memory_skills TEXT DEFAULT '',
-      avatar_color TEXT DEFAULT '#6366f1',
-      updated_at TEXT DEFAULT (datetime('now','localtime'))
-    )`);
-    // Seed with default if empty
-    const hasProfile = db.prepare('SELECT COUNT(*) FROM user_profile').raw().get()?.[0] || 0;
-    if (hasProfile === 0) {
-      db.exec("INSERT INTO user_profile (id, nickname, role, personality, memory_skills) VALUES (1, '', '', '', '')");
-    }
-    db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (6)");
-    currentVersion = 6;
-    log('initDatabase: migration v6 complete (user_profile)');
-  }
-
-  // ── v5: ai_feedback table ──
-  if (currentVersion < 5) {
-    db.exec(`CREATE TABLE IF NOT EXISTS ai_feedback (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      message_id TEXT DEFAULT '',
-      conversation_id TEXT DEFAULT '',
-      type TEXT NOT NULL,
-      rating INTEGER DEFAULT 0,
-      comment TEXT DEFAULT '',
-      context TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now','localtime'))
-    )`);
-    db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_type ON ai_feedback(type)');
-    db.exec('CREATE INDEX IF NOT EXISTS idx_feedback_created ON ai_feedback(created_at)');
-    db.exec("INSERT OR REPLACE INTO schema_version (version) VALUES (5)");
-    currentVersion = 5;
-    log('initDatabase: migration v5 complete (ai_feedback)');
   }
 
   // Migrate old status
