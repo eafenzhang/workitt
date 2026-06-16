@@ -64,6 +64,7 @@ async function checkGitHubRelease() {
 }
 
 // Download installer from GitHub releases with progress
+// Uses Node.js https module (avoids TLS cert issues with Azure CDN in Electron's fetch)
 async function downloadFromGitHub() {
   const resp = await fetch(GITHUB_API, {
     headers: githubHeaders(),
@@ -75,31 +76,78 @@ async function downloadFromGitHub() {
   const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
   if (!asset) return { ok: false, error: '未找到安装包' };
   log('Updater: downloading from ' + asset.browser_download_url);
-  const dlResp = await fetch(asset.browser_download_url, { signal: AbortSignal.timeout(300000) });
-  if (!dlResp.ok) return { ok: false, error: '下载失败 HTTP ' + dlResp.status };
-  const total = parseInt(dlResp.headers.get('content-length') || '0');
-  let downloaded = 0;
-  const reader = dlResp.body.getReader();
-  const chunks = [];
-  const startTime = Date.now();
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    downloaded += value.length;
-    if (total > 0) {
-      const pct = Math.round(downloaded / total * 100);
-      const speed = downloaded / ((Date.now() - startTime) / 1000);
-      broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
-    }
-  }
+
+  // Download with progress via https (relaxed TLS for Azure CDN compatibility)
+  return await downloadWithHttp(asset.browser_download_url, tag);
+}
+
+// Download using Node.js https module (more reliable than Electron fetch for CDN redirects)
+async function downloadWithHttp(downloadUrl, tag) {
+  const https = require('https');
   const { writeFileSync } = require('fs');
   const { join } = require('path');
-  const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
-  writeFileSync(installerPath, Buffer.concat(chunks));
-  broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
-  log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
-  return { ok: true, installerPath };
+
+  return new Promise((resolve) => {
+    const parsedUrl = require('url').parse(downloadUrl);
+    const options = {
+      hostname: parsedUrl.hostname,
+      path: parsedUrl.path,
+      headers: { 'User-Agent': 'Workitt-Updater' },
+      rejectUnauthorized: false,
+      timeout: 300000,
+    };
+
+    const req = https.request(options, (res) => {
+      // Follow redirect manually
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        const redirectUrl = res.headers.location.startsWith('http')
+          ? res.headers.location
+          : require('url').resolve(downloadUrl, res.headers.location);
+        log('Updater: following redirect to ' + redirectUrl);
+        res.resume(); // Drain the response
+        return resolve(downloadWithHttp(redirectUrl, tag));
+      }
+      if (res.statusCode !== 200) {
+        res.resume();
+        return resolve({ ok: false, error: '下载失败 HTTP ' + res.statusCode });
+      }
+
+      const total = parseInt(res.headers['content-length'] || '0');
+      let downloaded = 0;
+      const chunks = [];
+      const startTime = Date.now();
+
+      res.on('data', (chunk) => {
+        chunks.push(chunk);
+        downloaded += chunk.length;
+        if (total > 0) {
+          const pct = Math.round(downloaded / total * 100);
+          const speed = downloaded / ((Date.now() - startTime) / 1000);
+          broadcast('update:progress', { percent: pct, transferred: downloaded, total, bytesPerSecond: Math.round(speed) });
+        }
+      });
+
+      res.on('end', () => {
+        const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
+        writeFileSync(installerPath, Buffer.concat(chunks));
+        broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
+        log('Updater: download complete (' + downloaded + ' bytes to ' + installerPath + ')');
+        resolve({ ok: true, installerPath });
+      });
+    });
+
+    req.on('error', (e) => {
+      log('Updater: download error: ' + e.message);
+      resolve({ ok: false, error: e.message || '下载失败' });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      resolve({ ok: false, error: '下载超时' });
+    });
+
+    req.end();
+  });
 }
 
 function setupAutoUpdater() {
