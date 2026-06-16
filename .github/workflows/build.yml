@@ -65,7 +65,7 @@ jobs:
         if: success()
         with:
           tag_name: v${{ steps.version.outputs.version }}
-          name: Workit v${{ steps.version.outputs.version }}
+          name: Workitt v${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           files: |
