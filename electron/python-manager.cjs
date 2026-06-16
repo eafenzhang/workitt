@@ -146,105 +146,97 @@ class PythonManager {
   }
 
   /**
-   * Check if Python is available on the system.
+   * Try to spawn Python with given args, trying multiple python commands.
+   * Returns the child process on success, null if all failed.
    */
-  async _checkPython() {
+  _trySpawn(args, cwd) {
+    const pys = ['python', 'python3', 'py'];
+    for (const py of pys) {
+      try {
+        const child = spawn(py, args, {
+          cwd,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          env: { ...process.env, PYTHONUNBUFFERED: '1', PYTHONUTF8: '1' },
+          windowsHide: true,
+        });
+        log(`Spawned: ${py} ${args.join(' ')} (PID ${child.pid})`);
+        return child;
+      } catch (e) {
+        log(`${py} failed: ${e.message}`);
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Install pip dependencies from requirements.txt.
+   */
+  async _installDeps(backendDir) {
+    const reqFile = path.join(backendDir, 'requirements.txt');
+    if (!fs.existsSync(reqFile)) return false;
+    const { execSync } = require('child_process');
+    for (const cmd of ['python -m pip install -r', 'python3 -m pip install -r', 'py -m pip install -r']) {
+      try {
+        execSync(`${cmd} "${reqFile}" --quiet`, { cwd: backendDir, stdio: 'pipe', timeout: 120000 });
+        log('Python dependencies installed');
+        return true;
+      } catch { /* try next */ }
+    }
+    // Last attempt: --user flag
     try {
-      const { execSync } = require('child_process');
-      execSync('python --version', { stdio: 'pipe', timeout: 5000 });
+      execSync(`python -m pip install -r "${reqFile}" --quiet --user`, { cwd: backendDir, stdio: 'pipe', timeout: 120000 });
+      log('Python dependencies installed (--user)');
       return true;
     } catch {
-      try {
-        const { execSync } = require('child_process');
-        execSync('python3 --version', { stdio: 'pipe', timeout: 5000 });
-        return true;
-      } catch {
-        return false;
-      }
+      log('Failed to install Python dependencies');
+      return false;
     }
   }
 
   /**
-   * Install CowAgent Python dependencies if needed.
-   */
-  async _ensureDependencies(backendDir) {
-    const reqFile = path.join(backendDir, 'requirements.txt');
-    if (!fs.existsSync(reqFile)) {
-      log('No requirements.txt found, skipping dependency install');
-      return true;
-    }
-
-    try {
-      const { execSync } = require('child_process');
-      log('Checking CowAgent Python dependencies...');
-      execSync('python -m pip install -r "' + reqFile + '" --quiet', {
-        cwd: backendDir,
-        stdio: 'pipe',
-        timeout: 120000,
-      });
-      log('CowAgent Python dependencies installed');
-      return true;
-    } catch (e) {
-      log('Failed to install Python dependencies: ' + (e.message || e));
-      // Try with --user flag as fallback
-      try {
-        const { execSync } = require('child_process');
-        execSync('python -m pip install -r "' + reqFile + '" --quiet --user', {
-          cwd: backendDir,
-          stdio: 'pipe',
-          timeout: 120000,
-        });
-        log('CowAgent Python dependencies installed (--user)');
-        return true;
-      } catch (e2) {
-        log('Failed to install Python dependencies (--user): ' + (e2.message || e2));
-        return false;
-      }
-    }
-  }
-
-  /**
-   * Start the CowAgent Python backend.
-   * Returns a promise that resolves when the backend is ready.
+   * Start the CowAgent Python backend (matches cowagent-desktop approach).
    */
   async start() {
-    if (this._process) {
-      log('Already running');
-      return;
-    }
+    if (this._process) { log('Already running'); return; }
 
     this._exiting = false;
     this._ready = false;
-
-    // Check Python availability
-    const pythonOk = await this._checkPython();
-    if (!pythonOk) {
-      log('Python is not installed or not in PATH. CowAgent backend cannot start.');
-      log('Please install Python 3.10+ from https://www.python.org/downloads/');
-      return;
-    }
 
     // Kill stale backend on the target port
     await this._killExistingPort(this._port);
 
     // Find backend directory
     const backendDir = this._findBackendDir();
-    if (!backendDir) {
-      // Try `python -m cowagent` as fallback
-      log('CowAgent not found locally, trying `python -m cowagent`');
+    const useModule = !backendDir;
+    if (useModule) log('CowAgent not found locally, trying `python -m cowagent`');
+
+    // Attempt 1: spawn directly
+    const args1 = backendDir ? ['app.py'] : ['-m', 'cowagent'];
+    const child1 = this._trySpawn(args1, backendDir || undefined);
+
+    if (child1) {
+      this._process = child1;
+      const ready = await this._waitForReady();
+      if (ready) { this._ready = true; return; }
+
+      // Attempt 1 timed out — kill and install deps
+      log('Attempt 1 timed out, installing dependencies and retrying...');
+      this.stop();
+      if (backendDir) await this._installDeps(backendDir);
     }
 
-    // Auto-install dependencies if backend dir found
-    if (backendDir) {
-      await this._ensureDependencies(backendDir);
+    // Attempt 2: spawn after dependency install
+    const child2 = this._trySpawn(args1, backendDir || undefined);
+    if (child2) {
+      this._process = child2;
+      const ready = await this._waitForReady();
+      if (ready) { this._ready = true; return; }
+      log('Attempt 2 also timed out — CowAgent backend may need manual setup');
+      this.stop();
+    } else {
+      log('Could not start CowAgent backend: Python not found or backend not available');
     }
-
-    return new Promise((resolve, reject) => {
-      const pythonCmd = 'python';
-      const args = backendDir ? ['app.py'] : ['-m', 'cowagent'];
-      const cwd = backendDir || undefined;
-
-      log(`Starting: ${pythonCmd} ${args.join(' ')}${cwd ? ' (cwd: ' + cwd + ')' : ''}`);
+  }
 
       try {
         this._process = spawn(pythonCmd, args, {
@@ -307,6 +299,7 @@ class PythonManager {
 
   /**
    * Poll the CowAgent HTTP endpoint until it responds.
+   * Returns true if backend is ready, false if timeout.
    */
   async _waitForReady() {
     const start = Date.now();
@@ -314,22 +307,17 @@ class PythonManager {
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 2000);
-
-        const res = await fetch(`http://localhost:${this._port}/`, {
-          signal: controller.signal,
-        });
+        const res = await fetch(`http://localhost:${this._port}/`, { signal: controller.signal });
         clearTimeout(timeout);
-
-        // Any response means the server is up
         if (res.status >= 200 && res.status < 500) {
-          return;
+          log('CowAgent backend is ready');
+          return true;
         }
-      } catch {
-        // Not ready yet — keep waiting
-      }
+      } catch { /* not ready yet */ }
       await sleep(POLL_INTERVAL_MS);
     }
-    throw new Error(`CowAgent backend did not start within ${READY_TIMEOUT_MS / 1000}s`);
+    log(`CowAgent backend did not start within ${READY_TIMEOUT_MS / 1000}s`);
+    return false;
   }
 
   /**
