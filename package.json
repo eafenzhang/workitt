@@ -72,7 +72,7 @@
     "appId": "ai.workitt.app",
     "productName": "Workitt",
     "icon": "build/icon.ico",
-    "asar": false,
+    "asar": true,
     "files": [
       "dist/**/*",
       "electron/**/*",
@@ -115,6 +115,10 @@
     },
     "directories": {
       "output": "release"
-    }
+    },
+    "asarUnpack": [
+      "node_modules/better-sqlite3/**",
+      "node_modules/@electron/rebuild/**"
+    ]
   }
 }
