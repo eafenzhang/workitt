@@ -280,6 +280,15 @@ export async function getCowAgentConfig(): Promise<Record<string, unknown> | nul
   } catch { return null }
 }
 
+export async function getCowAgentVersion(): Promise<string> {
+  try {
+    const r = await fetch(`${API_BASE}/api/version`)
+    if (!r.ok) return ''
+    const d = await r.json()
+    return d?.version || ''
+  } catch { return '' }
+}
+
 // ─── Channels ──────────────────────────────────────────────
 
 export interface ChannelDef {

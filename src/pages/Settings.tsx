@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { SunIcon, MoonIcon, MonitorIcon, RefreshCwIcon, CogIcon, Trash2Icon, PaletteIcon, InfoIcon, CloudIcon, CloudOffIcon, BotIcon } from 'lucide-react';
 import { APP_ICON } from '../constants/icon';
-import { checkBackendStatus, getCowAgentConfig } from '../api/cowagent';
+import { checkBackendStatus, getCowAgentConfig, getCowAgentVersion } from '../api/cowagent';
 import { toast } from 'sonner';
 
 export default function Settings() {
@@ -16,9 +16,7 @@ export default function Settings() {
   useEffect(() => {
     const poll = () => {
       checkBackendStatus().then(s => setCowStatus(s));
-      getCowAgentConfig().then(c => {
-        if (c?.version) setCowVersion(String(c.version));
-      });
+      getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
     };
     poll();
     const timer = setInterval(poll, 5000); // poll every 5s
@@ -186,9 +184,14 @@ export default function Settings() {
                   </div>
                   <div className="text-xs mt-0.5" style={{ color: 'var(--wiki-text3)' }}>
                     {cowStatus.running
-                      ? `端口 ${cowStatus.port} · PID ${cowStatus.pid}${cowVersion ? ' · v' + cowVersion : ''}`
+                      ? `端口 ${cowStatus.port} · PID ${cowStatus.pid}`
                       : 'CowAgent Python 后端未启动，对话使用 Workitt 本地模型'}
                   </div>
+                  {cowVersion && (
+                    <div className="text-xs mt-1 font-mono" style={{ color: 'var(--wiki-text2)' }}>
+                      引擎版本: v{cowVersion}
+                    </div>
+                  )}
                   {!cowStatus.running && (
                     <div className="text-xs mt-1.5 p-2 rounded" style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444' }}>
                       请确保已安装 Python 3.10+（https://www.python.org/downloads/）<br />
@@ -201,7 +204,7 @@ export default function Settings() {
               <div className="flex items-center gap-2">
                 <button onClick={() => {
                   checkBackendStatus().then(s => setCowStatus(s));
-                  getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); });
+                  getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
                 }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
                   <RefreshCwIcon size={12} />刷新
                 </button>

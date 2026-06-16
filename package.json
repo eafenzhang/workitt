@@ -72,9 +72,6 @@
     "appId": "ai.workitt.app",
     "productName": "Workitt",
     "icon": "build/icon.ico",
-    "directories": {
-      "output": "release"
-    },
     "asar": false,
     "files": [
       "dist/**/*",
@@ -115,6 +112,9 @@
       "owner": "eafenzhang",
       "repo": "Workitt",
       "releaseType": "release"
+    },
+    "directories": {
+      "output": "release"
     }
   }
 }
