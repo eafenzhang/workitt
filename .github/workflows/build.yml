@@ -59,14 +59,29 @@ jobs:
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Commit and tag version bump
+      - name: Commit and push version bump to master
         shell: bash
         run: |
+          V=${{ steps.version.outputs.version }}
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git commit -m "chore: bump version to ${{ steps.version.outputs.version }}" || true
-          git tag -f v${{ steps.version.outputs.version }}
+          git commit -m "chore: bump version to $V [skip ci]" || true
+          # Push ONLY master branch (not tags), [skip ci] suppresses workflow re-trigger
+          git push origin master || true
+
+      - name: Delete existing tag/release and re-tag
+        shell: bash
+        run: |
+          V=v${{ steps.version.outputs.version }}
+          echo "Preparing release $V..."
+          # Delete existing release + remote tag (if any)
+          gh release delete "$V" --yes 2>/dev/null || true
+          git push origin ":refs/tags/$V" 2>/dev/null || true
+          # Create local tag on the pushed commit (HEAD)
+          git tag -f "$V"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
         uses: softprops/action-gh-release@v2.6.2
