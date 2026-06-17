@@ -299,6 +299,51 @@ function setupIPC(mainWindow, db) {
     }
   });
 
+  // ── CowAgent Config (direct file write + restart backend) ──
+  ipcMain.handle('cowagent:save-config', async (_event, updates) => {
+    try {
+      // Find the same backend dir that PythonManager uses
+      const pyMgr = getPythonManager();
+      const backendDir = pyMgr ? pyMgr._findBackendDir() : null;
+      if (!backendDir) {
+        log('CowAgent save-config: could not find backend directory');
+        return { success: false, error: 'CowAgent 后端目录未找到' };
+      }
+      const configPath = path.join(backendDir, 'config.json');
+      log('CowAgent config path:', configPath);
+      // Read existing config
+      let cfg = {};
+      try {
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        cfg = JSON.parse(raw);
+      } catch {}
+      // Apply updates
+      Object.assign(cfg, updates);
+      // Write back
+      fs.writeFileSync(configPath, JSON.stringify(cfg, null, 4), 'utf-8');
+      log('CowAgent config updated at:', configPath, 'keys:', Object.keys(updates));
+      // Read back and log to verify
+      try {
+        const raw = fs.readFileSync(configPath, 'utf-8');
+        const written = JSON.parse(raw);
+        log('CowAgent config verify - bot_type:', written.bot_type, 'model:', written.model, 'has_custom_key:', !!written.custom_api_key, 'has_deepseek_key:', !!written.deepseek_api_key, 'custom_api_base:', written.custom_api_base);
+      } catch (e) {
+        log('CowAgent config verify failed:', e.message);
+      }
+      // Restart the backend so it picks up the new config
+      if (pyMgr && pyMgr.isRunning) {
+        log('CowAgent: restarting backend to apply config...');
+        await pyMgr.stop();
+        await pyMgr.start();
+        log('CowAgent: backend restarted with new config');
+      }
+      return { success: true };
+    } catch (e) {
+      log('CowAgent save-config failed:', e.message);
+      return { success: false, error: e.message || '保存配置失败' };
+    }
+  });
+
   // ── MCP Runtime IPC Handlers ─────────────────────────────────────
   const mcpManager = McpClientManager.getInstance();
 
@@ -1036,6 +1081,21 @@ function setupIPC(mainWindow, db) {
       }
     } catch (e) { log('handleModules ERROR', e); return []; }
   }
+
+  // Debug: renderer → main process console/file logging
+  ipcMain.handle('renderer:log', (_event, level, ...args) => {
+    const ts = new Date().toISOString().split('T')[1].slice(0, 12);
+    const line = `[renderer:${level}] ${ts} ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`;
+    if (level === 'error') console.error(line);
+    else if (level === 'warn') console.warn(line);
+    else console.log(line);
+    // Also write to file for packaged-app debugging
+    try {
+      const logPath = path.join(app.getPath('userData'), 'canvaskit-debug.log');
+      fs.appendFileSync(logPath, line + '\n');
+    } catch {}
+    return true;
+  });
 }
 
 module.exports = { setupIPC };

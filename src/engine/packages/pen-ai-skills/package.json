@@ -1,0 +1,47 @@
+{
+  "name": "@minopencil/pen-ai-skills",
+  "version": "0.1.0",
+  "homepage": "https://github.com/MinoPencil contributors/openpencil/tree/main/packages/pen-ai-skills",
+  "bugs": {
+    "url": "https://github.com/MinoPencil contributors/openpencil/issues"
+  },
+  "license": "MIT",
+  "author": {
+    "name": "MinoPencil contributors",
+    "email": ""
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/MinoPencil contributors/openpencil.git",
+    "directory": "packages/pen-ai-skills"
+  },
+  "files": [
+    "src",
+    "skills",
+    "vite-plugin-skills.ts"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    },
+    "./vite-plugin": {
+      "types": "./vite-plugin-skills.ts",
+      "import": "./vite-plugin-skills.ts"
+    },
+    "./style-guide": {
+      "types": "./src/style-guide/index.ts",
+      "import": "./src/style-guide/index.ts"
+    },
+    "./_generated/style-guide-registry": {
+      "types": "./src/_generated/style-guide-registry.ts",
+      "import": "./src/_generated/style-guide-registry.ts"
+    }
+  },
+  "dependencies": {
+    "@minopencil/pen-types": "*",
+    "gray-matter": "^4.0.3",
+    "js-yaml": "^4.1.1"
+  }
+}

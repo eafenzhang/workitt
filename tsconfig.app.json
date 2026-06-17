@@ -23,9 +23,19 @@
     "noFallthroughCasesInSwitch": false,
     "baseUrl": ".",
     "paths": {
-      "@/*": [
-        "./src/*"
-      ]
+      "@/*": ["./src/*"],
+      "@minopencil/pen-types": ["./src/engine/packages/pen-types/src"],
+      "@minopencil/pen-types/*": ["./src/engine/packages/pen-types/src/*"],
+      "@minopencil/pen-core": ["./src/engine/packages/pen-core/src"],
+      "@minopencil/pen-core/*": ["./src/engine/packages/pen-core/src/*"],
+      "@minopencil/pen-engine": ["./src/engine/packages/pen-engine/src"],
+      "@minopencil/pen-engine/*": ["./src/engine/packages/pen-engine/src/*"],
+      "@minopencil/pen-react": ["./src/engine/packages/pen-react/src"],
+      "@minopencil/pen-react/*": ["./src/engine/packages/pen-react/src/*"],
+      "@minopencil/pen-renderer": ["./src/engine/packages/pen-renderer/src"],
+      "@minopencil/pen-renderer/*": ["./src/engine/packages/pen-renderer/src/*"],
+      "@minopencil/pen-ai-skills": ["./src/engine/packages/pen-ai-skills/src"],
+      "@minopencil/pen-ai-skills/*": ["./src/engine/packages/pen-ai-skills/src/*"]
     }
   },
   "include": ["src","auto-imports.d.ts"]

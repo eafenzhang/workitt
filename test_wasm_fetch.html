@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1>WASM Fetch Test</h1>
+<div id="result"></div>
+<script type="module">
+const log = (msg) => document.getElementById('result').innerHTML += msg + '<br>';
+
+log('Testing fetch of canvaskit.wasm...');
+
+// Test 1: relative fetch from dist/
+try {
+  const resp = await fetch('canvaskit/canvaskit.wasm');
+  log(`✓ fetch("canvaskit/canvaskit.wasm") → status: ${resp.status}, size: ${(await resp.arrayBuffer()).byteLength} bytes`);
+} catch(e) {
+  log(`✗ fetch("canvaskit/canvaskit.wasm") → ERROR: ${e.message}`);
+}
+
+// Test 2: relative to current directory
+try {
+  const resp = await fetch('./canvaskit/canvaskit.wasm');
+  log(`✓ fetch("./canvaskit/canvaskit.wasm") → status: ${resp.status}, size: ${(await resp.arrayBuffer()).byteLength} bytes`);
+} catch(e) {
+  log(`✗ fetch("./canvaskit/canvaskit.wasm") → ERROR: ${e.message}`);
+}
+</script>
+</body>
+</html>

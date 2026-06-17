@@ -433,3 +433,23 @@ select option {
 #portal-root > * {
   pointer-events: auto;
 }
+
+/* Toolbar button style — no background, no border, transparent */
+.toolbar-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: var(--muted-foreground);
+  transition: background 0.15s, color 0.15s;
+  cursor: default;
+}
+.toolbar-btn:hover {
+  background: var(--accent);
+  color: var(--accent-foreground);
+}
+.toolbar-btn:active {
+  opacity: 0.7;
+}

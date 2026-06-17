@@ -15,7 +15,7 @@ import PageHeader from '../components/PageHeader';
 import SearchBar, { FilterPills, type FilterPill } from '../components/SearchBar';
 import EmptyState from '../components/EmptyState';
 import ConfirmDialog from '../components/ConfirmDialog';
-import { DesignProvider, useDesignEngine, useDocument, useSelection, useHistory, useActiveTool, useViewport } from '../engine';
+import MinoCanvas from '../components/MinoCanvas';
 
 // ── OpenPencil-inspired Data Model ──
 interface DesignNode {
@@ -68,8 +68,11 @@ export default function DesignStudio(p: Props) {
   const openD=(d:DesignDoc)=>{if(p.onOpenSubTab)p.onOpenSubTab(d.title?.substring(0,20)||'设计稿','design-studio-detail',{docId:d.id})};
   const openC=()=>{if(p.onOpenSubTab)p.onOpenSubTab('新建画板','design-studio-create')};
   const cats=['设计稿-网页','设计稿-移动端','设计稿-原型'];
-  if(tab&&p.initialView==='design-studio-detail'&&p.docId)return<DesignEditor docId={p.docId} onClose={p.onCloseSelf!}/>;
-  if(tab&&p.initialView==='design-studio-create')return<DesignCreator onClose={p.onCloseSelf!}/>;
+  if(tab&&p.initialView==='design-studio-detail'&&p.docId){
+    // Load the doc and pass it to MinoCanvas
+    return <DesignDetailWrapper docId={p.docId} onClose={p.onCloseSelf!}/>;
+  }
+  if(tab&&p.initialView==='design-studio-create')return<MinoCanvas onClose={p.onCloseSelf!}/>;
   return (<div className="flex h-full overflow-hidden">
     <UnifiedSidebar open={so} onToggle={()=>setSo(false)} title="分类" actions={<button onClick={openC} className="w-6 h-6 rounded-lg flex items-center justify-center hover:bg-wiki-surface2"><PlusIcon size={12} style={S.text3}/></button>}>
       <SidebarItem label="全部" active={cat==='all'} onClick={()=>setCat('all')}/>
@@ -101,8 +104,20 @@ export default function DesignStudio(p: Props) {
   </div>);
 }
 
-// ── Engine-Powered DesignEditor ──
-function DesignEditor({docId,onClose}:{docId:number;onClose:()=>void}) {
+// ── Wrapper: loads doc from API, passes to MinoCanvas ──
+function DesignDetailWrapper({docId,onClose}:{docId:number;onClose:()=>void}) {
+  const [doc,setDoc]=useState<any>(null);
+  const [loading,setLoading]=useState(true);
+  useEffect(()=>{
+    apiFetch(API.documentsById(docId)).then(r=>r.json()).then(d=>{setDoc(d);setLoading(false)}).catch(()=>setLoading(false));
+  },[docId]);
+  if(loading)return <div className="flex items-center justify-center h-full text-sm text-wiki-text3">加载中...</div>;
+  if(!doc)return <div className="flex items-center justify-center h-full text-sm" style={{color:'var(--wiki-danger)'}}>加载失败</div>;
+  return <MinoCanvas docId={docId} initialDoc={doc} onClose={onClose}/>;
+}
+
+// ── OLD Engine-Powered DesignEditor (kept as reference, unused) ──
+function _DesignEditor({docId,onClose}:{docId:number;onClose:()=>void}) {
   const [loadedDoc,setLoadedDoc]=useState<any>(null);
   const [loading,setLoading]=useState(true);
   useEffect(()=>{

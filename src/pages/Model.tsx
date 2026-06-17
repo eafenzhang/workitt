@@ -7,6 +7,7 @@ import ProviderCard from '../components/ProviderCard';
 import ModelStatsBar from '../components/ModelStatsBar';
 import ApiKeyInput from '../components/ApiKeyInput';
 import ModelSelector from '../components/ModelSelector';
+import { saveCowAgentModelConfig } from '../api/cowagent';
 
 const TOAST = {
   deleted: '已删除',
@@ -142,6 +143,44 @@ export default function Model() {
         toast.success(editingId ? TOAST.updated : TOAST.saved);
         fetchModels();
         setShowModal(false);
+
+        // Sync to CowAgent when model is saved
+        const isCustom = !PROVIDERS.find((p) => p.id === f.provider);
+        const providerId = isCustom ? 'custom' : f.provider;
+        // Only send API key if it's unmasked (new model) or explicitly changed
+        const rawKey = f.apiKey;
+        const isMasked = /^\*{3,}/.test(rawKey) || rawKey === '••••••••';
+        const apiKey = isMasked ? '' : rawKey;
+        const apiBase = isCustom ? f.customBaseUrl : (p?.baseUrl || '');
+        try {
+          // Prefer direct file write via IPC (bypasses CowAgent HTTP auth)
+          const electronAPI = (window as any).electronAPI;
+          let ok = false;
+          if (electronAPI?.saveCowAgentConfig) {
+            const cowUpdates: Record<string, any> = { model: f.modelId };
+            cowUpdates.bot_type = isCustom ? 'custom' : f.provider;
+            if (apiKey) {
+              cowUpdates.custom_api_key = apiKey;
+              cowUpdates.deepseek_api_key = apiKey;
+            }
+            if (apiBase) cowUpdates.custom_api_base = apiBase;
+            const result = await electronAPI.saveCowAgentConfig(cowUpdates);
+            ok = result?.success;
+          } else {
+            // Fallback: HTTP API
+            ok = await saveCowAgentModelConfig({
+              provider: providerId, model: f.modelId, apiKey, apiBase,
+            });
+          }
+          if (ok) {
+            if (apiKey) toast.success('模型与 API Key 已同步到 CowAgent');
+            else toast.success('模型已同步到 CowAgent');
+          } else {
+            toast.error('同步到 CowAgent 失败');
+          }
+        } catch (e) {
+          toast.error('同步到 CowAgent 异常');
+        }
       } else {
         toast.error(d.error || '操作失败');
       }
@@ -188,6 +227,21 @@ export default function Model() {
     if (d.success) {
       toast.success(TOAST.setDefault);
       fetchModels();
+      // Sync default model to CowAgent
+      const m = models.find(x => x.id === id);
+      if (m) {
+        const electronAPI = (window as any).electronAPI;
+        if (electronAPI?.saveCowAgentConfig) {
+          await electronAPI.saveCowAgentConfig({
+            model: m.modelId,
+            bot_type: 'custom',
+          });
+        } else {
+          await saveCowAgentModelConfig({
+            provider: m.provider, model: m.modelId, apiKey: '', apiBase: m.baseUrl || '',
+          });
+        }
+      }
     } else {
       toast.error(d.error || TOAST.setDefaultFailed);
     }

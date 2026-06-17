@@ -237,7 +237,7 @@ export default function Settings() {
               </button>
             </div>
 
-            {/* 4 CowAgent toggle switches */}
+            {/* CowAgent toggle switches */}
             <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--wiki-border)' }}>
               <div className="text-xs font-semibold mb-3" style={{ color: 'var(--wiki-text2)' }}>引擎配置</div>
               {cowConfigLoading ? (

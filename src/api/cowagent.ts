@@ -286,12 +286,78 @@ export async function getCowAgentConfig(): Promise<Record<string, unknown> | nul
 export async function saveCowAgentConfig(config: Record<string, unknown>): Promise<boolean> {
   try {
     const r = await fetch(`${API_BASE}/config`, {
-      method: 'PUT',
+      method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(config),
+      body: JSON.stringify({ updates: config }),
     })
     return r.ok
   } catch { return false }
+}
+
+/** Save CowAgent model configuration (provider, model, api_key). */
+export async function saveCowAgentModelConfig(params: {
+  provider: string
+  model: string
+  apiKey: string
+  apiBase: string
+}): Promise<boolean> {
+  try {
+    const updates: Record<string, string> = {}
+    const nativeProviders = ['openai', 'anthropic', 'gemini']
+    const isNative = nativeProviders.includes(params.provider)
+
+    if (isNative) {
+      updates.bot_type = params.provider
+      updates.model = params.model || ''
+      const kf = PROVIDER_KEY_FIELDS[params.provider]
+      if (kf && params.apiKey) updates[kf] = params.apiKey
+      const bf = PROVIDER_BASE_FIELDS[params.provider]
+      if (bf && params.apiBase) updates[bf] = params.apiBase
+    } else {
+      updates.bot_type = 'custom'
+      updates.model = params.model || ''
+      if (params.apiKey) updates.custom_api_key = params.apiKey
+      const url = params.apiBase || ({
+        deepseek: 'https://api.deepseek.com/v1',
+        moonshot: 'https://api.moonshot.cn/v1',
+        minimax: 'https://api.minimax.chat/v1',
+      } as Record<string, string>)[params.provider] || ''
+      if (url) updates.custom_api_base = url
+      const kf = PROVIDER_KEY_FIELDS[params.provider]
+      if (kf && params.apiKey) updates[kf] = params.apiKey
+    }
+
+    if (Object.keys(updates).length === 0) return false
+    const r = await fetch(API_BASE + '/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates }),
+    })
+    if (!r.ok) console.error('[CowAgent] config save failed:', r.status)
+    return r.ok
+  } catch (e) {
+    console.error('[CowAgent] config save error:', e)
+    return false
+  }
+}
+
+// Provider → CowAgent config field mappings
+const PROVIDER_KEY_FIELDS: Record<string, string> = {
+  openai: 'open_ai_api_key',
+  anthropic: 'anthropic_api_key',
+  deepseek: 'deepseek_api_key',
+  moonshot: 'moonshot_api_key',
+  minimax: 'minimax_api_key',
+  gemini: 'gemini_api_key',
+  qwen: 'qwen_api_key',
+  zhipu: 'zhipu_api_key',
+  custom: 'custom_api_key',
+}
+
+const PROVIDER_BASE_FIELDS: Record<string, string> = {
+  openai: 'open_ai_api_base',
+  deepseek: 'deepseek_api_base',
+  custom: 'custom_api_base',
 }
 
 export async function getCowAgentVersion(): Promise<string> {

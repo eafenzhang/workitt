@@ -17,6 +17,9 @@ const lucideIconNames = Object.keys(lucide).filter(
 // https://vite.dev/config/
 export default defineConfig({
   base: './',
+  optimizeDeps: {
+    exclude: ['canvaskit-wasm'], // CJS module with .wasm binary — must not be pre-bundled
+  },
   build: {
     target: 'chrome126',
     modulePreload: false,
@@ -76,6 +79,12 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@minopencil/pen-types": path.resolve(__dirname, "./src/engine/packages/pen-types/src"),
+      "@minopencil/pen-core": path.resolve(__dirname, "./src/engine/packages/pen-core/src"),
+      "@minopencil/pen-engine": path.resolve(__dirname, "./src/engine/packages/pen-engine/src"),
+      "@minopencil/pen-react": path.resolve(__dirname, "./src/engine/packages/pen-react/src"),
+      "@minopencil/pen-renderer": path.resolve(__dirname, "./src/engine/packages/pen-renderer/src"),
+      "@minopencil/pen-ai-skills": path.resolve(__dirname, "./src/engine/packages/pen-ai-skills/src"),
     },
   },
 });
