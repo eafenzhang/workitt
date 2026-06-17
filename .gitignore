@@ -28,8 +28,7 @@ build/icon-256.png
 release4/
 backend/data/
 dist/
-backend/data/
-dist/
+dist-win/
 auto-imports.d.ts
 *.jpg
 *.png

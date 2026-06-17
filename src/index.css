@@ -453,3 +453,14 @@ select option {
 .toolbar-btn:active {
   opacity: 0.7;
 }
+
+/* ── Global scrollbar hide ── */
+* {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+*::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+}
