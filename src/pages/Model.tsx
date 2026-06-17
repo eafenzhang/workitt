@@ -217,7 +217,7 @@ export default function Model() {
   /* ---- render ---- */
 
   return (
-    <div className="flex flex-col gap-6 p-8 h-full overflow-y-auto scrollbar-thin">
+    <div className="flex flex-col gap-6 px-6 py-6 h-full overflow-y-auto scrollbar-thin">
       {/* Page header */}
       <div className="flex items-center justify-between">
         <div>

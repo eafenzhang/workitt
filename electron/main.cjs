@@ -90,8 +90,11 @@ app.whenReady().then(async () => {
 });
 
 // Pass mcpManager and PythonManager to cleanup on shutdown
+let _quitting = false;
 app.on('before-quit', async (event) => {
+  if (_quitting) return;
   event.preventDefault();
+  _quitting = true;
   try {
     const pyMgr = getPythonManager();
     await pyMgr.stop();

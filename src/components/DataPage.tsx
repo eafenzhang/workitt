@@ -191,7 +191,7 @@ export default function DataPage({
 
         {/* Content Area */}
         <div
-          className="overflow-y-auto scrollbar-thin flex-1 px-8 pb-4"
+          className="overflow-y-auto scrollbar-thin flex-1 px-6 pb-4"
           style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
         >
           <div

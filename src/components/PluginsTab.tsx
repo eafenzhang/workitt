@@ -190,27 +190,27 @@ export default function PluginsTab({ hideToolbar, onRenderActions }: { hideToolb
       {/* Custom add form modal */}
       {showAddForm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--wiki-overlay-heavy)', backdropFilter: 'blur(4px)' }} onClick={() => setShowAddForm(false)}>
-          <div className="w-[400px] rounded-lg p-5" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-semibold text-wiki-text">添加自定义 Claude 插件</h3>
-              <button onClick={() => setShowAddForm(false)}><XIcon size={16} style={{ color: 'var(--wiki-text3)' }} /></button>
+          <div className="w-[480px] rounded-lg p-6" style={{ background: 'var(--wiki-surface)', border: '1px solid var(--wiki-border)' }} onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-sm font-semibold text-wiki-text">添加自定义 Claude 插件</h2>
+              <button onClick={() => setShowAddForm(false)} className="p-1 rounded hover:bg-wiki-surface2"><XIcon size={18} style={{ color: 'var(--wiki-text3)' }} /></button>
             </div>
-            <div className="flex flex-col gap-2.5">
-              <div><label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>名称</label>
+            <div className="flex flex-col gap-4">
+              <div><label className="block text-sm font-medium mb-2" style={{ color: 'var(--wiki-text)' }}>名称</label>
                 <input value={addForm.name} onChange={e => setAddForm({ ...addForm, name: e.target.value })} placeholder="my-plugin"
-                  className="w-full px-2.5 py-1.5 rounded text-xs outline-none" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                  className="w-full px-3 py-2 rounded-lg text-xs outline-none" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
               </div>
-              <div><label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>描述</label>
+              <div><label className="block text-sm font-medium mb-2" style={{ color: 'var(--wiki-text)' }}>描述</label>
                 <input value={addForm.description} onChange={e => setAddForm({ ...addForm, description: e.target.value })} placeholder="我的自定义插件"
-                  className="w-full px-2.5 py-1.5 rounded text-xs outline-none" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
+                  className="w-full px-3 py-2 rounded-lg text-xs outline-none" style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }} />
               </div>
-              <div><label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>Config (JSON) — instructions 会注入 AI 系统提示</label>
+              <div><label className="block text-sm font-medium mb-2" style={{ color: 'var(--wiki-text)' }}>Config (JSON) — instructions 会注入 AI 系统提示</label>
                 <textarea value={addForm.configJson} onChange={e => setAddForm({ ...addForm, configJson: e.target.value })}
-                  rows={4} className="w-full px-2.5 py-1.5 rounded text-xs outline-none font-mono resize-vertical"
+                  rows={4} className="w-full px-3 py-2 rounded-lg text-xs outline-none font-mono resize-vertical"
                   style={{ background: 'var(--wiki-surface2)', border: '1px solid var(--wiki-border)', color: 'var(--wiki-text)' }}
                   placeholder='{"instructions": "当用户需要...时使用此插件"}' />
               </div>
-              <div className="flex items-center gap-2 justify-end pt-1">
+              <div className="flex items-center gap-2 justify-end pt-2">
                 <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 rounded text-xs" style={{ color: 'var(--wiki-text3)' }}>取消</button>
                 <button onClick={handleCustomAdd} className="px-4 py-1.5 rounded text-xs font-medium" style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>添加</button>
               </div>

@@ -85,7 +85,7 @@ export default function CowSchedulerTab() {
   };
 
   return (
-    <div className="flex flex-col gap-4 py-4 px-4">
+    <div className="flex flex-col gap-4 py-6 px-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>定时任务</h1>

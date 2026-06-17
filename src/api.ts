@@ -79,6 +79,7 @@ export async function apiFetch(url: string, opts?: RequestInit): Promise<any> {
 export const API = {
   requirements: '/api/requirements',
   requirementsUploadImage: '/api/requirements/upload-image',
+  requirementsUploadFile: '/api/requirements/upload-file',
   requirementsAnalyze: (id: number) => `/api/requirements/${id}/analyze`,
   requirementsById: (id: number) => `/api/requirements/${id}`,
   documents: '/api/documents',

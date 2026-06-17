@@ -101,7 +101,7 @@ export default function CowMemoryTab() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between px-8 pt-8 pb-4 flex-shrink-0">
+      <div className="flex items-center justify-between px-6 py-6 flex-shrink-0">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>
             CowAgent 记忆
@@ -112,7 +112,7 @@ export default function CowMemoryTab() {
         </div>
       </div>
 
-      <div className="flex gap-4 flex-1 overflow-hidden px-8 pb-8">
+      <div className="flex gap-4 flex-1 overflow-hidden px-6 pb-6">
         {/* ─── File list ──────────────────────────────── */}
         <div
           className="w-64 flex-shrink-0 rounded-lg overflow-hidden"

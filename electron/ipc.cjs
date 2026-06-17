@@ -359,6 +359,10 @@ function setupIPC(mainWindow, db) {
     switch (table) {
       case 'requirements':
         return handleRequirements(method, data, id);
+      case 'requirements/upload-file':
+        return handleRequirementsUpload(data);
+      case 'requirements/upload-image':
+        return handleRequirementsUpload(data);
       case 'documents':
         return handleDocuments(method, data, id);
       case 'mcp':
@@ -588,6 +592,23 @@ function setupIPC(mainWindow, db) {
         return { error: 'Unknown table: ' + table };
       }
     }
+  }
+
+  function handleRequirementsUpload(data) {
+    try {
+      const uploadsDir = path.join(app.getPath('userData'), 'uploads');
+      if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+      // data.file is the File object passed through IPC (as buffer)
+      const filename = Date.now() + '-' + Math.round(Math.random() * 1e9);
+      const buf = data?.file || data;
+      if (buf && Buffer.isBuffer(buf)) {
+        const ext = data?.name ? path.extname(data.name) : '.bin';
+        const filePath = path.join(uploadsDir, filename + ext);
+        fs.writeFileSync(filePath, buf);
+        return { url: `/uploads/${filename}${ext}` };
+      }
+      return { url: '' };
+    } catch (e) { log('handleRequirementsUpload error', e); return { error: e.message }; }
   }
 
   function handleRequirements(method, data, id) {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTheme } from '../context/ThemeContext';
 import { SunIcon, MoonIcon, MonitorIcon, RefreshCwIcon, CogIcon, Trash2Icon, PaletteIcon, InfoIcon, BotIcon } from 'lucide-react';
 import { APP_ICON } from '../constants/icon';
@@ -17,7 +17,7 @@ export default function Settings() {
     const poll = () => {
       checkBackendStatus().then(s => setCowStatus(s));
       getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
-      getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
+      getCowAgentConfig().then(c => { if (c) { setCowConfig(c); setCowConfigLoading(false); } });
     };
     poll();
     const timer = setInterval(poll, 5000); // poll every 5s
@@ -32,7 +32,13 @@ export default function Settings() {
   const [currentVersion, setCurrentVersion] = useState('1.0.0');
   const [updatingCowAgent, setUpdatingCowAgent] = useState(false);
   const [cowConfig, setCowConfig] = useState<Record<string, any> | null>(null);
-  const [cowSaving, setCowSaving] = useState(false);
+  const [cowConfigLoading, setCowConfigLoading] = useState(true);
+  const cowSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cowConfigRef = useRef(cowConfig);
+  // Note: cowConfigRef is intentionally NOT synced reactively via useEffect.
+  // The onChange handler does a direct write to the ref (line ~273), which must
+  // not be overwritten by the poll's stale state triggering a setCowConfig -> re-render -> effect sync.
+  useEffect(() => { return () => { if (cowSaveTimer.current) clearTimeout(cowSaveTimer.current); }; }, []);
 
   const api = window.electronAPI;
 
@@ -48,7 +54,7 @@ export default function Settings() {
         toast.success('CowAgent 后端更新成功');
         // Refresh status
         checkBackendStatus().then(s => setCowStatus(s));
-        getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); });
+        getCowAgentConfig().then(c => { if (c?.version) setCowVersion(String(c.version)); setCowConfig(c || null); });
       } else {
         toast.error(result?.error || '更新失败');
       }
@@ -59,23 +65,6 @@ export default function Settings() {
     }
   }, []);
 
-  const handleSaveCowConfig = useCallback(async () => {
-    if (!cowConfig) return;
-    setCowSaving(true);
-    try {
-      const ok = await saveCowAgentConfig(cowConfig);
-      if (ok) {
-        toast.success('CowAgent 配置已保存');
-        getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
-      } else {
-        toast.error('保存配置失败');
-      }
-    } catch {
-      toast.error('保存异常');
-    } finally {
-      setCowSaving(false);
-    }
-  }, [cowConfig]);
 
   useEffect(() => {
     api?.getVersion?.().then((v: string) => { if (v) setCurrentVersion(v); }).catch(() => {});
@@ -217,26 +206,53 @@ export default function Settings() {
                   )}
                 </div>
               </div>
-              <div className="flex items-center gap-2">
-                <button onClick={() => {
-                  checkBackendStatus().then(s => setCowStatus(s));
-                  getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
-                  getCowAgentConfig().then(c => { if (c) setCowConfig(c); });
-                }} className="flex items-center gap-1 px-3 py-1.5 rounded text-xs" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-                  <RefreshCwIcon size={12} />刷新
-                </button>
-                <button onClick={handleCowAgentUpdate} disabled={updatingCowAgent}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs disabled:opacity-50"
-                  style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-                  <RefreshCwIcon size={12} className={updatingCowAgent ? 'animate-spin' : ''} />
-                  {updatingCowAgent ? '更新中...' : '后端更新'}
-                </button>
-              </div>
+              <button onClick={async () => {
+                  setUpdatingCowAgent(true);
+                  // 1. Check current status & version
+                  await Promise.all([
+                    checkBackendStatus().then(s => setCowStatus(s)),
+                    getCowAgentVersion().then(v => { if (v) setCowVersion(v); }),
+                    getCowAgentConfig().then(c => { if (c) setCowConfig(c); setCowConfigLoading(false); }),
+                  ]);
+                  // 2. Check if update is available
+                  if (api?.updateCowAgent) {
+                    const result = await api.updateCowAgent();
+                    if (result?.success) {
+                      toast.success('CowAgent 已更新到最新版本');
+                      getCowAgentVersion().then(v => { if (v) setCowVersion(v); });
+                    } else if (result?.error) {
+                      if (!result.error.includes('已是最新') && !result.error.includes('nothing')) {
+                        toast.error(result.error);
+                      } else {
+                        toast('CowAgent 已是最新版本');
+                      }
+                    }
+                  }
+                  setUpdatingCowAgent(false);
+                }} disabled={updatingCowAgent}
+                className="flex items-center gap-1 px-3 py-1.5 rounded text-xs disabled:opacity-50"
+                style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
+                <RefreshCwIcon size={12} className={updatingCowAgent ? 'animate-spin' : ''} />
+                {updatingCowAgent ? '检查中...' : '检查更新'}
+              </button>
             </div>
 
             {/* 4 CowAgent toggle switches */}
             <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--wiki-border)' }}>
               <div className="text-xs font-semibold mb-3" style={{ color: 'var(--wiki-text2)' }}>引擎配置</div>
+              {cowConfigLoading ? (
+                <div className="flex flex-col gap-3">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="flex items-center justify-between animate-pulse">
+                      <div className="flex flex-col gap-1">
+                        <div className="h-4 w-20 rounded" style={{ background: 'var(--wiki-surface2)' }} />
+                        <div className="h-3 w-36 rounded" style={{ background: 'var(--wiki-surface2)' }} />
+                      </div>
+                      <div className="w-9 h-5 rounded-full" style={{ background: 'var(--wiki-surface2)' }} />
+                    </div>
+                  ))}
+                </div>
+              ) : (
               <div className="flex flex-col gap-3">
                 {[
                   { key: 'agent', label: '启用 Agent', desc: '启用 CowAgent 智能体核心功能' },
@@ -251,18 +267,23 @@ export default function Settings() {
                     </div>
                     <Toggle
                       value={cowConfig?.[item.key] === true || cowConfig?.[item.key] === 'true'}
-                      onChange={(v) => setCowConfig(prev => ({ ...prev, [item.key]: v }))}
+                      onChange={(v) => {
+                        if (!cowConfigRef.current || Object.keys(cowConfigRef.current).length === 0) return; // prevent saving partial config before backend loaded
+                        const latest = { ...cowConfigRef.current, [item.key]: v };
+                        setCowConfig(latest);
+                        cowConfigRef.current = latest;
+                        if (cowSaveTimer.current) clearTimeout(cowSaveTimer.current);
+                        cowSaveTimer.current = setTimeout(async () => {
+                          const ok = await saveCowAgentConfig(latest);
+                          if (ok) toast.success(item.label + ' 已更新');
+                          else toast.error('保存失败');
+                        }, 500);
+                      }}
                     />
                   </div>
                 ))}
               </div>
-              <div className="flex justify-end mt-3">
-                <button onClick={handleSaveCowConfig} disabled={cowSaving || !cowConfig}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium disabled:opacity-50"
-                  style={{ background: 'var(--wiki-text)', color: 'var(--wiki-bg)' }}>
-                  {cowSaving ? '保存中...' : '保存配置'}
-                </button>
-              </div>
+              )}
             </div>
           </div>
         </section>

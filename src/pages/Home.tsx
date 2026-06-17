@@ -429,11 +429,15 @@ function Home({ onOpenTab }: HomeProps) {
 
     // Try CowAgent SSE streaming first
     if (backendAvailable) {
-      let sessionId = activeConvId || 'default';
-      try {
-        const session = await createSession('Workitt 对话');
-        if (session?.session_id) sessionId = session.session_id;
-      } catch {}
+      // Reuse existing session or create new one (don't create new on every msg)
+      let sessionId = activeConvId || '';
+      if (!sessionId) {
+        try {
+          const session = await createSession('Workitt 对话');
+          if (session?.session_id) { sessionId = session.session_id; setActiveConvId(sessionId); }
+        } catch {}
+      }
+      if (!sessionId) sessionId = 'default';
 
       const ctrl = chatStream(payload.content, sessionId, {
         onDelta: (text) => setStreamingContent(text),
@@ -604,7 +608,7 @@ function Home({ onOpenTab }: HomeProps) {
       {/* Scrollable content */}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden scrollbar-thin px-6">
         {!hasMessages ? (
-          <div className="flex flex-col items-center justify-center h-full gap-8">
+          <div className="flex flex-col items-center pt-[15vh] gap-4">
             <div className="flex flex-col items-center gap-2 text-center">
               <h1 className="text-2xl font-semibold" style={{ color: 'var(--wiki-text)' }}>Hi，{greeting}</h1>
               <p className="text-sm" style={{ color: 'var(--wiki-text3)' }}>{welcomeSub}</p>
@@ -651,16 +655,22 @@ function Home({ onOpenTab }: HomeProps) {
             })}
             {sending && (
               <div className="flex justify-start">
-                <div className="px-4 py-2.5 rounded-xl" style={{ background: 'var(--wiki-surface2)' }}>
-                  <Loader2Icon size={16} className="animate-spin" style={{ color: 'var(--wiki-text3)' }} />
-                </div>
+                {streamingContent ? (
+                  <div className="px-4 py-2.5 rounded-xl text-sm leading-relaxed max-w-[85%]" style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text)' }}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown>
+                  </div>
+                ) : (
+                  <div className="px-4 py-2.5 rounded-xl" style={{ background: 'var(--wiki-surface2)' }}>
+                    <Loader2Icon size={16} className="animate-spin" style={{ color: 'var(--wiki-text3)' }} />
+                  </div>
+                )}
               </div>
             )}
           </div>
         )}
       </div>
       {/* Fixed bottom bar — toolbar inside input */}
-      <div className="flex-shrink-0 pb-3 pt-2 w-full flex justify-center" style={!hasMessages ? { position: 'absolute', bottom: 0, left: 0, right: 0, background: 'var(--wiki-surface)' } : {}}>
+      <div className="flex-shrink-0 pb-3 pt-2 w-full flex justify-center" style={!hasMessages ? { position: 'absolute', bottom: 0, left: 0, right: 0 } : {}}>
         <div style={{ width: '42rem', maxWidth: 'calc(100% - 2rem)' }}>
           <HomeInput
             onSend={handleSend}

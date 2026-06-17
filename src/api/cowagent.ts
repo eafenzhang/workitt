@@ -93,11 +93,14 @@ export function chatStream(
 
   ;(async () => {
     try {
+      const timeout30s = new AbortController();
+      const timeoutId = setTimeout(() => timeout30s.abort(), 30000);
+      ctrl.signal.addEventListener('abort', () => { clearTimeout(timeoutId); if (!timeout30s.signal.aborted) timeout30s.abort(); });
       const res = await fetch(`${API_BASE}/message`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: query, session_id: sessionId, stream: true }),
-        signal: ctrl.signal,
+        signal: timeout30s.signal,
       })
 
       if (!res.ok) throw new Error(`API ${res.status}`)
@@ -275,7 +278,7 @@ export async function getCowAgentTools(): Promise<ToolInfo[]> {
 
 export async function getCowAgentConfig(): Promise<Record<string, unknown> | null> {
   try {
-    const r = await fetch(`${API_BASE}/config`)
+    const r = await fetch(`${API_BASE}/config`, { signal: AbortSignal.timeout(3000) })
     return r.ok ? await r.json() : null
   } catch { return null }
 }
@@ -293,7 +296,7 @@ export async function saveCowAgentConfig(config: Record<string, unknown>): Promi
 
 export async function getCowAgentVersion(): Promise<string> {
   try {
-    const r = await fetch(`${API_BASE}/api/version`)
+    const r = await fetch(`${API_BASE}/api/version`, { signal: AbortSignal.timeout(3000) })
     if (!r.ok) return ''
     const d = await r.json()
     return d?.version || ''

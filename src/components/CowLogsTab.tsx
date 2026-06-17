@@ -44,7 +44,7 @@ export default function CowLogsTab() {
   };
 
   return (
-    <div className="flex flex-col gap-3 py-4 px-4 h-full">
+    <div className="flex flex-col gap-3 py-6 px-6 h-full">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>CowAgent 实时日志</h1>

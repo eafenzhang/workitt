@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { getChannels, saveChannelConfig, connectChannel, disconnectChannel, type ChannelDef } from '../api/cowagent';
-import { RefreshCwIcon, WifiIcon, WifiOffIcon, PlugIcon, UnplugIcon, MessageSquareIcon, GlobeIcon, SmartphoneIcon, HeadphonesIcon, PencilIcon, XIcon } from 'lucide-react';
+import { RefreshCwIcon, WifiIcon, WifiOffIcon, PlugIcon, UnplugIcon, MessageSquareIcon, GlobeIcon, SmartphoneIcon, HeadphonesIcon, PencilIcon, XIcon, QrCodeIcon } from 'lucide-react';
 import { toast } from 'sonner';
 
 const ICON_MAP: Record<string, any> = {
@@ -73,7 +73,7 @@ export default function CowChannelsTab() {
   };
 
   return (
-    <div className="flex flex-col gap-4 py-4 px-4">
+    <div className="flex flex-col gap-4 py-6 px-6">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold" style={{ color: 'var(--wiki-text)' }}>IM 通道</h1>
@@ -129,7 +129,7 @@ export default function CowChannelsTab() {
                 <button onClick={() => openEdit(ch)}
                   className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium"
                   style={{ background: 'var(--wiki-surface2)', color: 'var(--wiki-text2)' }}>
-                  <PencilIcon size={12} />编辑
+                  <PencilIcon size={12} />{ch.name === 'wechat' ? '绑定' : '编辑'}
                 </button>
                 {isActive ? (
                   <button onClick={() => handleDisconnect(ch)}
@@ -161,6 +161,19 @@ export default function CowChannelsTab() {
               <button onClick={() => setEditingChannel(null)}><XIcon size={16} style={{ color: 'var(--wiki-text3)' }} /></button>
             </div>
             <div className="flex flex-col gap-3">
+              {editingChannel.name === 'wechat' && (
+                <div className="mb-2 p-3 rounded-lg flex flex-col items-center gap-2" style={{ background: 'var(--wiki-surface2)', border: '1px dashed var(--wiki-border)' }}>
+                  <QrCodeIcon size={32} style={{ color: 'var(--wiki-text3)' }} />
+                  <div className="text-xs text-center" style={{ color: 'var(--wiki-text2)' }}>
+                    打开 CowAgent 后台扫码绑定微信
+                  </div>
+                  <button onClick={() => window.dispatchEvent(new CustomEvent('open-browser-tab', { detail: { url: 'http://localhost:9899/' } }))}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium"
+                    style={{ background: 'rgba(99,102,241,0.12)', color: '#6366f1' }}>
+                    <SmartphoneIcon size={12} />打开后台扫码
+                  </button>
+                </div>
+              )}
               {editingChannel.fields.map(field => (
                 <div key={field.key}>
                   <label className="text-[11px] font-medium mb-1 block" style={{ color: 'var(--wiki-text3)' }}>{field.label}</label>

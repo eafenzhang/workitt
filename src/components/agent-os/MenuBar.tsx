@@ -8,7 +8,7 @@ import { APP_ICON } from '../../constants/icon';
 
 // ── Menu items (left side) ────────────────────────────────────────
 
-const MENU_ITEMS = ['Workitt', '访达', '设置'] as const;
+const MENU_ITEMS = ['访达', '设置'] as const;
 type MenuItem = (typeof MENU_ITEMS)[number];
 
 // ── Helpers ───────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ interface MenuBarProps {
 }
 
 /**
- * Top menu bar (40px) — macOS-style with Workit logo, menu items,
+ * Top menu bar (36px) — macOS-style with Workit logo, menu items,
  * centered clock, OS toggle, fullscreen toggle, and window controls.
  * Height and icon sizes match app-mode TitleBar for consistency.
  */
@@ -55,7 +55,7 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
 
   return (
     <div
-      className="glass flex items-center h-10 flex-shrink-0 select-none relative"
+      className="glass flex items-center h-9 flex-shrink-0 select-none relative"
       style={{
         borderBottom: '1px solid var(--wiki-border)',
         fontSize: '13px',
@@ -72,13 +72,6 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
           onClick={() => window.dispatchEvent(new CustomEvent('trigger-update-check'))}
         />
         {MENU_ITEMS.map((item) => {
-          if (item === 'Workitt') {
-            return (
-              <span key={item} className="font-semibold cursor-default" style={{ color: 'var(--wiki-text)' }}>
-                {item}
-              </span>
-            );
-          }
           if (item === '访达') {
             return (
               <button
@@ -121,24 +114,24 @@ export default function MenuBar({ isOSMode, onToggleOSMode, onOpenFinder, onOpen
       <div className="flex h-full flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' }}>
         <button
           onClick={(e) => { e.stopPropagation(); onToggleOSMode(); }}
-          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
+          className="w-10 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
           title="切换应用模式"
           aria-label="切换应用模式"
         >
-          {isOSMode ? <LayoutGridIcon size={15} style={{ color: 'var(--wiki-text2)' }} /> : <MonitorIcon size={15} style={{ color: 'var(--wiki-text2)' }} />}
+          {isOSMode ? <LayoutGridIcon size={14} style={{ color: 'var(--wiki-text2)' }} /> : <MonitorIcon size={14} style={{ color: 'var(--wiki-text2)' }} />}
         </button>
         <button
           onClick={() => getAPI()?.setFullScreen?.(!fullscreen)}
-          className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
+          className="w-10 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors"
           title={fullscreen ? '退出全屏' : '全屏模式'}
           aria-label="全屏"
         >
-          {fullscreen ? <Minimize2Icon size={15} style={{ color: 'var(--wiki-text2)' }} /> : <Maximize2Icon size={15} style={{ color: 'var(--wiki-text2)' }} />}
+          {fullscreen ? <Minimize2Icon size={14} style={{ color: 'var(--wiki-text2)' }} /> : <Maximize2Icon size={14} style={{ color: 'var(--wiki-text2)' }} />}
         </button>
-        <button onClick={() => getAPI()?.minimize?.()} className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最小化">
+        <button onClick={() => getAPI()?.minimize?.()} className="w-10 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最小化">
           <svg width="10" height="10" viewBox="0 0 12 12"><rect y="5" width="12" height="1.5" fill="var(--wiki-text2)"/></svg>
         </button>
-        <button onClick={() => getAPI()?.maximize?.()} className="w-11 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最大化">
+        <button onClick={() => getAPI()?.maximize?.()} className="w-10 h-full flex items-center justify-center hover:bg-wiki-surface2 transition-colors" aria-label="最大化">
           {maximized ? (
             <svg width="11" height="11" viewBox="0 0 13 13"><rect x="2.5" y="0.5" width="9" height="9" rx="1" fill="var(--wiki-surface)" stroke="var(--wiki-text2)" strokeWidth="0.8"/><rect x="0.5" y="2.5" width="9" height="9" rx="1" fill="var(--wiki-surface)" stroke="var(--wiki-text2)" strokeWidth="1.2"/></svg>
           ) : (

@@ -47,6 +47,8 @@ class PythonManager {
     this._port = BACKEND_PORT;
     this._ready = false;
     this._exiting = false;
+    this._restartCount = 0;
+    this._starting = false;
   }
 
   get isRunning() {
@@ -204,13 +206,22 @@ class PythonManager {
           }
         });
 
-        // Detect premature exit (crash before ready)
+        // Detect exit (crash or intentional stop)
+        child._exitCode = null;
         child.on('exit', (code) => {
+          child._exitCode = code;
           log(`Python process exited with code ${code}`);
           if (stdoutBuf.trim()) log(`[python:flush:out] ${stdoutBuf.trim()}`);
           if (stderrBuf.trim()) log(`[python:flush:err] ${stderrBuf.trim()}`);
           this._process = null;
           this._ready = false;
+          // Auto-restart with exponential backoff (up to 3 attempts) on crash
+          if (!this._exiting && code !== 0 && (this._restartCount || 0) < 3) {
+            this._restartCount = (this._restartCount || 0) + 1;
+            const delay = Math.min(5000 * Math.pow(2, this._restartCount - 1), 20000);
+            log(`Auto-restart attempt ${this._restartCount}/3 in ${delay}ms...`);
+            setTimeout(() => this.start(), delay);
+          }
         });
 
         return child;
@@ -251,6 +262,8 @@ class PythonManager {
    */
   async start() {
     if (this._process) { log('Already running'); return; }
+    if (this._starting) { log('Already starting — ignoring duplicate call'); return; }
+    this._starting = true;
 
     this._exiting = false;
     this._ready = false;
@@ -270,7 +283,7 @@ class PythonManager {
     if (child1) {
       this._process = child1;
       const ready = await this._waitForReady();
-      if (ready) { this._ready = true; return; }
+      if (ready) { this._ready = true; this._restartCount = 0; this._starting = false; return; }
 
       // Attempt 1 failed — install deps and retry
       log('Attempt 1 failed, installing Python dependencies...');
@@ -279,6 +292,7 @@ class PythonManager {
     } else {
       log('Could not start CowAgent backend: Python not found or backend not available');
       log('请确保已安装 Python 3.10+（https://www.python.org/downloads/）');
+      this._starting = false;
       return;
     }
 
@@ -287,13 +301,14 @@ class PythonManager {
     if (child2) {
       this._process = child2;
       const ready = await this._waitForReady();
-      if (ready) { this._ready = true; return; }
+      if (ready) { this._ready = true; this._restartCount = 0; this._starting = false; return; }
       log('Attempt 2 also failed — CowAgent backend could not start');
       log('请检查 Workitt 日志（%APPDATA%/Workitt/workit.log）获取详细错误信息');
       this.stop();
     } else {
       log('Could not start CowAgent backend on retry');
     }
+    this._starting = false;
   }
 
 
@@ -341,6 +356,7 @@ class PythonManager {
 
     this._exiting = true;
     this._ready = false;
+    this._restartCount = 0;
 
     const pid = this._process.pid;
     log(`Stopping CowAgent backend (PID ${pid})...`);
