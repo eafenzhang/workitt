@@ -45,22 +45,32 @@ app.whenReady().then(async () => {
 
     mainWindow = createWindow(preloadPath);
     setupIPC(mainWindow, db);
-    // Try to populate GitHub token for updater (from git credential store)
+    // Try to populate GitHub token for updater
     try {
-      const { execSync } = require('child_process');
-      const out = execSync('git credential fill', {
-        input: 'protocol=https\nhost=github.com\n\n',
-        encoding: 'utf-8',
-        timeout: 5000,
-        windowsHide: true,
-      });
-      const match = out.match(/^password=(.+)$/m);
-      if (match) {
-        const token = match[1].trim();
-        if (token && !process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
-          process.env.GH_TOKEN = token;
-          log('Updater: loaded GitHub token from credential store');
-        }
+      let token = null;
+      // 1. Try git credential fill (works with Windows Credential Manager / git-credential-manager)
+      try {
+        const { execSync } = require('child_process');
+        const out = execSync('git credential fill', {
+          input: 'protocol=https\nhost=github.com\n\n',
+          encoding: 'utf-8', timeout: 5000, windowsHide: true,
+        });
+        const match = out.match(/^password=(.+)$/m);
+        if (match) token = match[1].trim();
+      } catch {}
+      // 2. Fallback: read ~/.git-credentials directly
+      if (!token) {
+        try {
+          const { homedir } = require('os');
+          const credFile = require('path').join(homedir(), '.git-credentials');
+          const creds = require('fs').readFileSync(credFile, 'utf-8');
+          const match = creds.match(/github\.com[^\n]*:([^\s@]+)@/);
+          if (match) token = match[1].trim();
+        } catch {}
+      }
+      if (token && !process.env.GH_TOKEN && !process.env.GITHUB_TOKEN) {
+        process.env.GH_TOKEN = token;
+        log('Updater: loaded GitHub token');
       }
     } catch (e) { /* credential read is best-effort */ }
     setupAutoUpdater();

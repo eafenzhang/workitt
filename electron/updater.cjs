@@ -64,7 +64,8 @@ async function checkGitHubRelease() {
 }
 
 // Download installer from GitHub releases with progress
-// Uses Electron's net.request (Chromium network stack — reliable TLS on Windows)
+// Uses the GitHub API asset endpoint (api.github.com) instead of
+// github.com/releases/download which may be unreachable on some networks.
 async function downloadFromGitHub() {
   const resp = await fetch(GITHUB_API, {
     headers: githubHeaders(),
@@ -75,99 +76,73 @@ async function downloadFromGitHub() {
   const tag = release.tag_name || '';
   const asset = release.assets?.find(a => a.name?.endsWith('.exe') && a.name?.includes('Setup'));
   if (!asset) return { ok: false, error: '未找到安装包' };
-  log('Updater: downloading from ' + asset.browser_download_url);
+  log('Updater: downloading asset ' + asset.name + ' via API (id=' + asset.id + ')');
 
-  return await downloadWithElectronNet(asset.browser_download_url, tag);
+  // Download via api.github.com (not github.com — may be unreachable)
+  return await downloadAssetViaAPI(asset.id, tag);
 }
 
-// Download using Electron's net module (Chromium stack — best TLS support)
-async function downloadWithElectronNet(downloadUrl, tag) {
-  const { net } = require('electron');
-  const { writeFileSync } = require('fs');
+// Download release asset via GitHub API: GET /repos/:owner/:repo/releases/assets/:id
+// Header: Accept: application/octet-stream — returns raw binary, no redirect needed.
+async function downloadAssetViaAPI(assetId, tag) {
+  const { writeFileSync, createWriteStream, unlinkSync, renameSync } = require('fs');
   const { join } = require('path');
+  const { pipeline } = require('stream/promises');
+  const { Readable } = require('stream');
+  const tmpPath = join(app.getPath('temp'), 'Workitt-Update.download');
+  const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
 
-  return new Promise((resolve) => {
-    const urlObj = require('url').parse(downloadUrl);
-    const reqHeaders = { 'User-Agent': 'Workitt-Updater' };
-    if (GITHUB_TOKEN) reqHeaders['Authorization'] = 'token ' + GITHUB_TOKEN;
-    const clientReq = net.request({
-      method: 'GET',
-      protocol: urlObj.protocol,
-      hostname: urlObj.hostname,
-      port: urlObj.port || 443,
-      path: urlObj.path,
-      headers: reqHeaders,
-      redirect: 'follow',
-    });
-
-    clientReq.on('response', (response) => {
-      const statusCode = response.statusCode;
-      log('Updater: net.response status=' + statusCode);
-
-      if (statusCode < 200 || statusCode >= 400) {
-        return resolve({ ok: false, error: '下载失败 HTTP ' + statusCode });
-      }
-
-      const total = parseInt(response.headers['content-length'] || '0');
-      let downloaded = 0;
-      const chunks = [];
-      const startTime = Date.now();
-      let lastBroadcast = 0;
-      let lastPct = -1;
-
-      response.on('data', (chunk) => {
-        chunks.push(chunk);
-        downloaded += chunk.length;
-        const now = Date.now();
-        if (now - lastBroadcast > 200) {
-          lastBroadcast = now;
-          const pct = total > 0 ? Math.round(downloaded / total * 100) : 0;
-          if (pct !== lastPct) {
-            lastPct = pct;
-            const speed = downloaded / ((now - startTime) / 1000);
-            broadcast('update:progress', {
-              percent: pct,
-              transferred: downloaded,
-              total: total || downloaded,
-              bytesPerSecond: Math.round(speed),
-            });
-          }
-        }
-      });
-
-      response.on('end', () => {
-        const installerPath = join(app.getPath('temp'), 'Workitt-Update.exe');
-        writeFileSync(installerPath, Buffer.concat(chunks));
-        broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
-        log('Updater: download complete (' + downloaded + ' bytes in ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's)');
-        resolve({ ok: true, installerPath });
-      });
-
-      response.on('error', (e) => {
-        log('Updater: stream error: ' + e.message);
-        resolve({ ok: false, error: e.message || '下载失败' });
-      });
-    });
-
-    // Timeout handling via timer (net.ClientRequest doesn't support .setTimeout())
-    const timeoutTimer = setTimeout(() => {
-      clientReq.destroy();
-      log('Updater: download timeout after 300s');
-      resolve({ ok: false, error: '下载超时' });
-    }, 300000);
-
-    clientReq.on('error', (e) => {
-      clearTimeout(timeoutTimer);
-      log('Updater: net.request error: ' + e.message);
-      resolve({ ok: false, error: e.message || '连接失败' });
-    });
-
-    clientReq.on('close', () => {
-      clearTimeout(timeoutTimer);
-    });
-
-    clientReq.end();
+  const ASSET_API = `https://api.github.com/repos/eafenzhang/Workitt/releases/assets/${assetId}`;
+  const resp = await fetch(ASSET_API, {
+    headers: { ...githubHeaders(), 'Accept': 'application/octet-stream' },
+    signal: AbortSignal.timeout(300000),
   });
+  if (!resp.ok) return { ok: false, error: 'Asset API HTTP ' + resp.status };
+  if (!resp.body) return { ok: false, error: 'No response body' };
+
+  const total = parseInt(resp.headers.get('content-length') || '0');
+  let downloaded = 0;
+  const startTime = Date.now();
+  let lastBroadcast = 0;
+  let lastPct = -1;
+
+  // Collect chunks
+  const chunks = [];
+  const reader = resp.body.getReader();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(Buffer.from(value));
+      downloaded += value.byteLength;
+      const now = Date.now();
+      if (now - lastBroadcast > 200) {
+        lastBroadcast = now;
+        const pct = total > 0 ? Math.round(downloaded / total * 100) : 0;
+        if (pct !== lastPct) {
+          lastPct = pct;
+          const speed = downloaded / ((now - startTime) / 1000);
+          broadcast('update:progress', {
+            percent: pct,
+            transferred: downloaded,
+            total: total || downloaded,
+            bytesPerSecond: Math.round(speed),
+          });
+        }
+      }
+    }
+
+    const buffer = Buffer.concat(chunks);
+    writeFileSync(installerPath, buffer);
+    broadcast('update:downloaded', { version: tag.replace(/^v/, '') });
+    log('Updater: download complete (' + buffer.length + ' bytes in ' + ((Date.now() - startTime) / 1000).toFixed(1) + 's)');
+    return { ok: true, installerPath };
+  } catch (e) {
+    log('Updater: download error: ' + e.message);
+    try { unlinkSync(tmpPath); } catch {}
+    return { ok: false, error: e.message || '下载失败' };
+  }
 }
 
 function setupAutoUpdater() {
