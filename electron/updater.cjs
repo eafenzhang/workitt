@@ -88,13 +88,15 @@ async function downloadWithElectronNet(downloadUrl, tag) {
 
   return new Promise((resolve) => {
     const urlObj = require('url').parse(downloadUrl);
+    const reqHeaders = { 'User-Agent': 'Workitt-Updater' };
+    if (GITHUB_TOKEN) reqHeaders['Authorization'] = 'token ' + GITHUB_TOKEN;
     const clientReq = net.request({
       method: 'GET',
       protocol: urlObj.protocol,
       hostname: urlObj.hostname,
       port: urlObj.port || 443,
       path: urlObj.path,
-      headers: { 'User-Agent': 'Workitt-Updater' },
+      headers: reqHeaders,
       redirect: 'follow',
     });
 

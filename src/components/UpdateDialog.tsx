@@ -84,6 +84,8 @@ export default function UpdateDialog() {
       const r = await api?.downloadUpdate?.();
       if (r?.ok && r?.installerPath) {
         setInstallerPath(r.installerPath);
+        setPercent(100);
+        setPhase('downloaded');
       } else {
         setError(r?.error || '下载失败');
         setPhase('error');
