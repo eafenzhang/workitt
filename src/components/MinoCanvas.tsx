@@ -8,12 +8,12 @@ import {
   DesignProvider,
   useDesignEngine,
   DesignCanvas,
-  CoreToolbar,
   LayerPanel,
   PropertyPanel,
   StatusBar,
   BooleanToolbar,
 } from '@minopencil/pen-react'
+import HorizontalToolbar from './HorizontalToolbar'
 import CanvasAiChat from './CanvasAiChat'
 import CanvasCodePanel from './CanvasCodePanel'
 import { useCanvasShortcuts } from './useCanvasShortcuts'
@@ -130,15 +130,17 @@ function CanvasInner({ docId, initialDoc, onClose }: any) {
 
   return (
     <div className="flex flex-col h-full bg-background">
-      {/* TopBar */}
-      <div className="flex items-center h-10 px-3 border-b border-border bg-card flex-shrink-0">
-        <button onClick={() => setLayerOpen(o => !o)} className="p-1.5 rounded hover:bg-muted mr-2" title="切换图层面板">
+      {/* TopBar with centered toolbar */}
+      <div className="flex items-center h-11 px-3 border-b border-border bg-card flex-shrink-0 gap-2">
+        <button onClick={() => setLayerOpen(o => !o)} className="p-1.5 rounded hover:bg-muted" title="切换图层面板">
           <PanelLeftIcon size={16} className="text-muted-foreground" />
         </button>
-        <input className="text-sm font-medium bg-transparent outline-none text-foreground" value={title} onChange={e => setTitle(e.target.value)} placeholder="未命名" />
-        <div className="flex-1" />
-        <button onClick={exportPNG} className="text-xs px-2 py-1 rounded text-muted-foreground hover:bg-muted border border-border mr-1">PNG</button>
-        <button onClick={() => { navigator.clipboard.writeText(exportAsSVG(nodes)); toast.success('SVG 已复制') }} className="text-xs px-2 py-1 rounded text-muted-foreground hover:bg-muted border border-border mr-2">SVG</button>
+        <input className="text-sm font-medium bg-transparent outline-none w-32 text-foreground flex-shrink-0" value={title} onChange={e => setTitle(e.target.value)} placeholder="未命名" />
+        <div className="flex-1 flex justify-center">
+          <HorizontalToolbar />
+        </div>
+        <button onClick={exportPNG} className="text-xs px-2 py-1 rounded text-muted-foreground hover:bg-muted border border-border">PNG</button>
+        <button onClick={() => { navigator.clipboard.writeText(exportAsSVG(nodes)); toast.success('SVG 已复制') }} className="text-xs px-2 py-1 rounded text-muted-foreground hover:bg-muted border border-border">SVG</button>
         <button onClick={onClose} className="text-xs px-2 py-1 rounded text-muted-foreground hover:bg-muted border border-border">关闭</button>
       </div>
 
@@ -154,9 +156,6 @@ function CanvasInner({ docId, initialDoc, onClose }: any) {
         {/* Canvas area */}
         <div className="flex-1 flex flex-col min-w-0 relative bg-muted/30">
           <div className="absolute left-3 top-3 z-20">
-            <CoreToolbar />
-          </div>
-          <div className="absolute left-16 top-3 z-20">
             <BooleanToolbar />
           </div>
           <div className="flex-1 relative" style={{ background: gridBg }}>
