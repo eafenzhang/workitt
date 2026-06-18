@@ -21,6 +21,7 @@ const Model = lazy(() => import('./Model'));
 const Browser = lazy(() => import('./Browser'));
 const Settings = lazy(() => import('./Settings'));
 const DesignStudio = lazy(() => import('./DesignStudio'));
+const OpenDesign = lazy(() => import('./OpenDesign'));
 const Workflows = lazy(() => import('./Workflows'));
 const CowChannelsTab = lazy(() => import('../components/CowChannelsTab'));
 const CowMemoryTab = lazy(() => import('../components/CowMemoryTab'));
@@ -53,6 +54,7 @@ const MENU_MAP: Record<string, { type: string; title: string }> = {
   requirements: { type: 'requirements', title: '采集库' },
   knowledge: { type: 'knowledge', title: '知识库' },
   'design-studio': { type: 'design-studio', title: '设计稿' },
+  'open-design': { type: 'open-design', title: 'AI 设计' },
   model: { type: 'model', title: '模型配置' },
   mcp: { type: 'mcp', title: '工具' },
   channels: { type: 'channels', title: 'IM通道' },
@@ -268,6 +270,8 @@ export default function Index() {
           onOpenSubTab={(title, type, extra) => openTab(type, title, extra)}
           onCloseSelf={onCloseSelf}
         /></Lazy>;
+      case 'open-design':
+        return <Lazy><OpenDesign key={activeTab.id} /></Lazy>;
       case 'design-studio':
         return <Lazy><DesignStudio
           key={activeTab.id}
