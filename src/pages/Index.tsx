@@ -338,6 +338,7 @@ export default function Index() {
                              activeTab?.type === 'requirements' ? 'requirements' :
                              activeTab?.type === 'knowledge' ? 'knowledge' :
                              activeTab?.type === 'design-studio' ? 'design-studio' :
+                             activeTab?.type === 'open-design' ? 'open-design' :
                              activeTab?.type === 'mcp' ? 'mcp' :
                              activeTab?.type === 'model' ? 'model' :
                              activeTab?.type === 'browser' ? 'browser' :
