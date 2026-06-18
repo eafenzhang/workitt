@@ -114,9 +114,6 @@ export default function Index() {
     if (type.includes('knowledge-') || type.includes('design-studio-')) {
       params.initialView = type;
       if (extra?.docId != null) params.docId = extra.docId;
-      if (extra?.template) params.template = extra.template;
-      if (extra?.style) params.style = extra.style;
-      if (extra?.width) params.width = extra.width;
     }
     openWindow(type, title, params);
   }, [openWindow]);
